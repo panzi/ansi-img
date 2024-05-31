@@ -12,7 +12,7 @@ use image::codecs::png::PngDecoder;
 use image::codecs::webp::WebPDecoder;
 use image::io::Reader as ImageReader;
 use image::error::ImageResult;
-use image::{AnimationDecoder, DynamicImage, Frame, GenericImage, ImageDecoder, Rgba, RgbaImage};
+use image::{AnimationDecoder, DynamicImage, Frame, GenericImage, ImageDecoder, Pixel, Rgb, Rgba, RgbaImage};
 use image::imageops;
 
 pub fn image_to_ansi(image: &RgbaImage, alpha_treshold: u8) -> Vec<String> {
@@ -211,15 +211,11 @@ pub struct StyleParseError();
 impl Display for StyleParseError {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(self, f)
+        "illegal style value".fmt(f)
     }
 }
 
-impl std::error::Error for StyleParseError {
-    fn description(&self) -> &str {
-        "illegal style value"
-    }
-}
+impl std::error::Error for StyleParseError {}
 
 impl FromStr for Style {
     type Err = StyleParseError;
@@ -302,16 +298,11 @@ pub struct CanvasSizeParseError();
 impl Display for CanvasSizeParseError {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(self, f)
+        "illegal canvas size".fmt(f)
     }
 }
 
-impl std::error::Error for CanvasSizeParseError {
-    #[inline]
-    fn description(&self) -> &str {
-        "illegal canvas size"
-    }
-}
+impl std::error::Error for CanvasSizeParseError {}
 
 impl FromStr for CanvasSize {
     type Err = CanvasSizeParseError;
@@ -356,16 +347,11 @@ pub struct FilterParseError();
 impl Display for FilterParseError {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(self, f)
+        "illegal filter type".fmt(f)
     }
 }
 
-impl std::error::Error for FilterParseError {
-    #[inline]
-    fn description(&self) -> &str {
-        "illegal filter type"
-    }
-}
+impl std::error::Error for FilterParseError {}
 
 impl FromStr for Filter {
     type Err = FilterParseError;
@@ -387,6 +373,52 @@ impl FromStr for Filter {
     }
 }
 
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum Color {
+    Transparent,
+    Solid(image::Rgb<u8>)
+}
+
+impl Display for Color {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Color::Transparent => "transparent".fmt(f),
+            Color::Solid(Rgb([r, g, b])) => write!(f, "#{r:02x}{g:02x}{b:02x}"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ColorParseError();
+
+impl Display for ColorParseError {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        "illegal color value".fmt(f)
+    }
+}
+
+impl std::error::Error for ColorParseError {}
+
+impl FromStr for Color {
+    type Err = ColorParseError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        if value.eq_ignore_ascii_case("transparent") {
+            Ok(Color::Transparent)
+        } else if value.starts_with('#') && value.len() == 7 {
+            let Ok(r) = u8::from_str_radix(&value[1..3], 16) else { return Err(ColorParseError()); };
+            let Ok(g) = u8::from_str_radix(&value[3..5], 16) else { return Err(ColorParseError()); };
+            let Ok(b) = u8::from_str_radix(&value[5..7], 16) else { return Err(ColorParseError()); };
+
+            Ok(Color::Solid(Rgb([r, g, b])))
+        } else {
+            Err(ColorParseError())
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -404,6 +436,9 @@ struct Args {
 
     #[arg(short, long, default_value_t = Filter(imageops::FilterType::Nearest))]
     filter: Filter,
+
+    #[arg(short, long, default_value_t = Color::Transparent)]
+    background_color: Color,
 
     #[arg()]
     path: OsString,
@@ -429,6 +464,21 @@ fn interruptable_sleep(duration: Duration) -> bool {
     }
 }
 
+#[inline]
+fn fill_color(image: &mut RgbaImage, color: Color) {
+    match color {
+        Color::Transparent => {
+            image.fill(0);
+        }
+        Color::Solid(rgb) => {
+            let rgba = rgb.to_rgba();
+            for pixel in image.pixels_mut() {
+                *pixel = rgba;
+            }
+        }
+    }
+}
+
 fn main() -> ImageResult<()> {
     use std::io::Write;
 
@@ -440,6 +490,7 @@ fn main() -> ImageResult<()> {
     let run_anim = Arc::new(AtomicBool::new(true));
     let path = args.path;
     let filter = args.filter.0;
+    let background_color = args.background_color;
 
     {
         let loop_anim = run_anim.clone();
@@ -459,7 +510,10 @@ fn main() -> ImageResult<()> {
         CanvasSize::Exact(width, height) => Some(RgbaImage::new(width, height * 2)),
         CanvasSize::Window =>
             term_size::dimensions().map(|(width, height)|
-                RgbaImage::new(width as u32, height as u32 * 2)),
+                match background_color {
+                    Color::Transparent => RgbaImage::new(width as u32, height as u32 * 2),
+                    Color::Solid(rgb) => RgbaImage::from_pixel(width as u32, height as u32 * 2, rgb.to_rgba()),
+                }),
         CanvasSize::Image => None,
     };
 
@@ -536,15 +590,22 @@ fn main() -> ImageResult<()> {
                             if canvas_size.is_window() {
                                 if let Some((term_width, term_height)) = term_size::dimensions() {
                                     if term_width != term_canvas.width() as usize || term_height != term_canvas.height() as usize {
-                                        *term_canvas = RgbaImage::new(term_width as u32, term_height as u32 * 2);
+                                        match background_color {
+                                            Color::Transparent => {
+                                                *term_canvas = RgbaImage::new(term_width as u32, term_height as u32 * 2);
+                                            }
+                                            Color::Solid(rgb) => {
+                                                *term_canvas = RgbaImage::from_pixel(term_width as u32, term_height as u32 * 2, rgb.to_rgba());
+                                            }
+                                        }
                                     } else {
-                                        term_canvas.fill(0);
+                                        fill_color(term_canvas, background_color);
                                     }
                                 } else {
-                                    term_canvas.fill(0);
+                                    fill_color(term_canvas, background_color);
                                 }
                             } else {
-                                term_canvas.fill(0);
+                                fill_color(term_canvas, background_color);
                             }
 
                             style.paint(&frame_image, term_canvas, filter);
