@@ -494,9 +494,9 @@ fn main() -> ImageResult<()> {
     let background_color = args.background_color;
 
     {
-        let loop_anim = run_anim.clone();
+        let run_anim = run_anim.clone();
         let _ = ctrlc::set_handler(move || {
-            loop_anim.store(false, Ordering::Relaxed);
+            run_anim.store(false, Ordering::Relaxed);
         });
     }
 
