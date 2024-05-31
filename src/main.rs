@@ -102,6 +102,7 @@ pub enum Style {
     ShrinkToFit,
 }
 
+#[inline]
 fn draw_contain(image: &RgbaImage, canvas: &mut RgbaImage, filter: imageops::FilterType) {
     if canvas.width() == image.width() && canvas.height() == image.height() {
         imageops::overlay(canvas, image, 0, 0);
@@ -124,6 +125,7 @@ fn draw_contain(image: &RgbaImage, canvas: &mut RgbaImage, filter: imageops::Fil
     }
 }
 
+#[inline]
 fn draw_center(image: &RgbaImage, canvas: &mut RgbaImage) {
     let x = (canvas.width() as i64 - image.width() as i64) / 2;
     let y = (canvas.height() as i64 - image.height() as i64) / 2;
@@ -423,21 +425,52 @@ impl FromStr for Color {
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    /// Times to loop the animation.
+    /// 
+    /// Negative values mean infinite looping.
     #[arg(short, long, default_value_t = -1)]
     loop_count: i64,
 
+    /// Placement and scaling.
+    /// 
+    /// Values:{n}
+    /// - center{n}
+    /// - tile{n}
+    /// - position <x> <y>{n}
+    /// - cover{n}
+    /// - contain{n}
+    /// - shrink-to-fit (or shrinktofit)
     #[arg(short, long, default_value_t = Style::ShrinkToFit)]
     style: Style,
 
+    /// Size of the canvas.
+    /// 
+    /// Values:{n}
+    /// - window{n}
+    /// - image{n}
+    /// - <width> <height>
     #[arg(short, long, default_value_t = CanvasSize::Window)]
     canvas_size: CanvasSize,
 
     #[arg(short, long, default_value_t = 127)]
     alpha_threshold: u8,
 
+    /// Filter used when resizing images.
+    /// 
+    /// Values:{n}
+    /// - nearest{n}
+    /// - triangle{n}
+    /// - catmull-rom (or catmullrom){n}
+    /// - caussian{n}
+    /// - lanczos3
     #[arg(short, long, default_value_t = Filter(imageops::FilterType::Nearest))]
     filter: Filter,
 
+    /// Set the background color.
+    /// 
+    /// Values:{n}
+    /// - transparent{n}
+    /// - #RRGGBB
     #[arg(short, long, default_value_t = Color::Transparent)]
     background_color: Color,
 
