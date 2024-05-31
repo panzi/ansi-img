@@ -23,7 +23,7 @@ frame rate and produces artifacts all over.
 [![Phone video of the display of the GIF in the terminal](https://img.youtube.com/vi/AqIT7vIFiDQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=AqIT7vIFiDQ)
 
 In this video I display this GIF (made it myself) in a 293 columns by 77 lines
-Konsole terminal window.
+Konsole terminal window on a 4k monitor and otherwise old hardware.
 
 ![Rotating cartoonish gold coin](https://i.imgur.com/A6ThmHM.gif)
 
