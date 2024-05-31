@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::fmt::{Display, Write};
 
 use clap::Parser;
@@ -424,7 +424,7 @@ fn interruptable_sleep(duration: Duration) -> bool {
 
     #[cfg(not(target_family = "unix"))]
     {
-        std::process::sleep(duration);
+        std::thread::sleep(duration);
         return true;
     }
 }
@@ -521,6 +521,8 @@ fn main() -> ImageResult<()> {
 
                 while loop_count.unwrap_or(1) > 0 && run_anim.load(Ordering::Relaxed) {
                     for frame in &frames {
+                        let now = Instant::now();
+
                         if !run_anim.load(Ordering::Relaxed) {
                             break;
                         }
@@ -557,7 +559,9 @@ fn main() -> ImageResult<()> {
                         print!("{linebuf}");
                         let _ = lock.flush();
 
-                        if !interruptable_sleep(duration) {
+                        let elapsed = now.elapsed();
+
+                        if duration > elapsed && !interruptable_sleep(duration - elapsed) {
                             run_anim.store(false, Ordering::Relaxed);
                             break;
                         }
