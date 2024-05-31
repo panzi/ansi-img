@@ -15,13 +15,13 @@ use image::error::ImageResult;
 use image::{AnimationDecoder, DynamicImage, Frame, GenericImage, ImageDecoder, Pixel, Rgb, Rgba, RgbaImage};
 use image::imageops;
 
-pub fn image_to_ansi(image: &RgbaImage, alpha_treshold: u8) -> Vec<String> {
+pub fn image_to_ansi(image: &RgbaImage, alpha_threshold: u8) -> Vec<String> {
     let mut lines = vec![];
-    image_to_ansi_into(image, alpha_treshold, &mut lines);
+    image_to_ansi_into(image, alpha_threshold, &mut lines);
     lines
 }
 
-pub fn image_to_ansi_into(image: &RgbaImage, alpha_treshold: u8, lines: &mut Vec<String>) {
+pub fn image_to_ansi_into(image: &RgbaImage, alpha_threshold: u8, lines: &mut Vec<String>) {
     let line_len = (image.width() as usize) * "\x1B[38;2;255;255;255\x1B[48;2;255;255;255m▄".len() + "\x1B[0m".len();
 
     for line_y in 0..((image.height() + 1) / 2) {
@@ -33,8 +33,8 @@ pub fn image_to_ansi_into(image: &RgbaImage, alpha_treshold: u8, lines: &mut Vec
             for x in 0..image.width() {
                 let color = *image.get_pixel(x, y);
                 let Rgba([r, g, b, a]) = color;
-                if a < alpha_treshold {
-                    if prev_color[3] < alpha_treshold {
+                if a < alpha_threshold {
+                    if prev_color[3] < alpha_threshold {
                         line.push(' ');
                     } else {
                         line.push_str("\x1B[0m ");
@@ -53,18 +53,18 @@ pub fn image_to_ansi_into(image: &RgbaImage, alpha_treshold: u8, lines: &mut Vec
                 let Rgba([r1, g1, b1, a1]) = color_top;
 
                 if color_top == color_bottom {
-                    if a1 < alpha_treshold {
+                    if a1 < alpha_threshold {
                         line.push_str("\x1B[0m ");
                     } else {
                         let _ = write!(line, "\x1B[38;2;{r1};{g1};{b1}m█");
                     }
                 } else {
                     let Rgba([r2, g2, b2, a2]) = color_bottom;
-                    if a1 < alpha_treshold && a2 < alpha_treshold {
+                    if a1 < alpha_threshold && a2 < alpha_threshold {
                         line.push_str("\x1B[0m ");
-                    } else if a1 < alpha_treshold {
+                    } else if a1 < alpha_threshold {
                         let _ = write!(line, "\x1B[0m\x1B[38;2;{r2};{g2};{b2}m▄");
-                    } else if a2 < alpha_treshold {
+                    } else if a2 < alpha_threshold {
                         let _ = write!(line, "\x1B[0m\x1B[38;2;{r1};{g1};{b1}m▀");
                     } else {
                         let _ = write!(line, "\x1B[48;2;{r1};{g1};{b1}m\x1B[38;2;{r2};{g2};{b2}m▄");
@@ -433,7 +433,7 @@ struct Args {
     canvas_size: CanvasSize,
 
     #[arg(short, long, default_value_t = 127)]
-    alpha_treshold: u8,
+    alpha_threshold: u8,
 
     #[arg(short, long, default_value_t = Filter(imageops::FilterType::Nearest))]
     filter: Filter,
@@ -485,7 +485,7 @@ fn main() -> ImageResult<()> {
 
     let args = Args::parse();
 
-    let alpha_treshold = args.alpha_treshold;
+    let alpha_threshold = args.alpha_threshold;
     let style = args.style;
     let canvas_size = args.canvas_size;
     let run_anim = Arc::new(AtomicBool::new(true));
@@ -625,9 +625,9 @@ fn main() -> ImageResult<()> {
 
                             style.paint(&frame_canvas, term_canvas, filter);
 
-                            image_to_ansi_into(term_canvas, alpha_treshold, &mut lines);
+                            image_to_ansi_into(term_canvas, alpha_threshold, &mut lines);
                         } else {
-                            image_to_ansi_into(&frame_canvas, alpha_treshold, &mut lines);
+                            image_to_ansi_into(&frame_canvas, alpha_threshold, &mut lines);
                         }
                         write_frame_to_buf(&lines, &mut linebuf);
 
@@ -661,9 +661,9 @@ fn main() -> ImageResult<()> {
         DecodedImage::Still(image) => {
             if let Some(term_canvas) = &mut term_canvas {
                 style.paint(&image, term_canvas, filter);
-                image_to_ansi_into(&term_canvas, alpha_treshold, &mut lines);
+                image_to_ansi_into(&term_canvas, alpha_threshold, &mut lines);
             } else {
-                image_to_ansi_into(&image, alpha_treshold, &mut lines);
+                image_to_ansi_into(&image, alpha_threshold, &mut lines);
             }
             write_frame_to_buf(&lines, &mut linebuf);
 
