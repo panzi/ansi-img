@@ -22,7 +22,7 @@ pub fn image_to_ansi(image: &RgbaImage, alpha_treshold: u8) -> Vec<String> {
 }
 
 pub fn image_to_ansi_into(image: &RgbaImage, alpha_treshold: u8, lines: &mut Vec<String>) {
-    let line_len = (image.width() as usize) * "\x1B[38;2;255;255;255\x1B[48;2;255;255;255m▄".len();
+    let line_len = (image.width() as usize) * "\x1B[38;2;255;255;255\x1B[48;2;255;255;255m▄".len() + "\x1B[0m".len();
 
     for line_y in 0..((image.height() + 1) / 2) {
         let mut line = String::with_capacity(line_len);
@@ -73,6 +73,7 @@ pub fn image_to_ansi_into(image: &RgbaImage, alpha_treshold: u8, lines: &mut Vec
             }
         }
 
+        line.push_str("\x1B[0m");
         lines.push(line);
     }
 }
@@ -583,7 +584,21 @@ fn main() -> ImageResult<()> {
                         let duration: Duration = frame.delay().into();
 
                         let frame_image = frame.buffer();
-                        frame_canvas.copy_from(frame_image, frame.left(), frame.top())?;
+                        if let Color::Solid(rgb) = background_color {
+                            let rgba = rgb.to_rgba();
+                            for pixel in frame_canvas.pixels_mut() {
+                                *pixel = rgba;
+                            }
+                            imageops::overlay(&mut frame_canvas, frame_image, frame.left() as i64, frame.top() as i64);
+                        } else {
+                            if frame_image.width() != frame_canvas.width() ||
+                               frame_image.height() != frame_canvas.height() ||
+                               frame.left() != 0 || frame.top() != 0
+                            {
+                                frame_canvas.fill(0);
+                            }
+                            frame_canvas.copy_from(frame_image, frame.left(), frame.top())?;
+                        }
 
                         lines.clear();
                         if let Some(term_canvas) = &mut term_canvas {
@@ -608,11 +623,11 @@ fn main() -> ImageResult<()> {
                                 fill_color(term_canvas, background_color);
                             }
 
-                            style.paint(&frame_image, term_canvas, filter);
+                            style.paint(&frame_canvas, term_canvas, filter);
 
                             image_to_ansi_into(term_canvas, alpha_treshold, &mut lines);
                         } else {
-                            image_to_ansi_into(frame_image, alpha_treshold, &mut lines);
+                            image_to_ansi_into(&frame_canvas, alpha_treshold, &mut lines);
                         }
                         write_frame_to_buf(&lines, &mut linebuf);
 
