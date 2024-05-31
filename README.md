@@ -17,8 +17,8 @@ It supports displaying animated GIFs! (Press Ctrl+C to quit the animation.)
 Demo
 ----
 
-I filmed it with my phone, because screen capture somehow ruins the frame rate
-and produces artifacts all over.
+I filmed this video with my phone, because screen capture somehow ruins the
+frame rate and produces artifacts all over.
 
 [![Phone video of the display of the GIF in the terminal](https://img.youtube.com/vi/AqIT7vIFiDQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=AqIT7vIFiDQ)
 
@@ -26,3 +26,75 @@ In this video I display this GIF (made it myself) in a 293 columns by 77 lines
 Konsole terminal window.
 
 ![Rotating cartoonish gold coin](https://i.imgur.com/A6ThmHM.gif)
+
+Usage
+-----
+
+```plain
+Usage: ansi-img [OPTIONS] <PATH>
+
+Arguments:
+  <PATH>
+          
+
+Options:
+  -l, --loop-count <LOOP_COUNT>
+          Times to loop the animation.
+          
+          Negative values mean infinite looping.
+          
+          [default: -1]
+
+  -s, --style <STYLE>
+          Placement and scaling.
+          
+          Values:
+           - center
+           - tile
+           - position <x> <y>
+           - cover
+           - contain
+           - shrink-to-fit (or shrinktofit)
+          
+          [default: shrink-to-fit]
+
+  -c, --canvas-size <CANVAS_SIZE>
+          Size of the canvas.
+          
+          Values:
+           - window
+           - image
+           - <width> <height>
+          
+          [default: window]
+
+  -a, --alpha-threshold <ALPHA_THRESHOLD>
+          [default: 127]
+
+  -f, --filter <FILTER>
+          Filter used when resizing images.
+          
+          Values:
+           - nearest
+           - triangle
+           - catmull-rom (or catmullrom)
+           - caussian
+           - lanczos3
+          
+          [default: Nearest]
+
+  -b, --background-color <BACKGROUND_COLOR>
+          Set the background color.
+          
+          Values:
+           - transparent
+           - #RRGGBB
+          
+          [default: transparent]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+```
