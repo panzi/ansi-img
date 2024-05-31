@@ -518,11 +518,10 @@ fn main() -> ImageResult<()> {
             if !frames.is_empty() {
                 let mut frame_canvas = RgbaImage::new(width, height);
                 let mut loop_count = if args.loop_count < 0 { None } else { Some(args.loop_count )};
+                let mut timestamp = Instant::now();
 
                 while loop_count.unwrap_or(1) > 0 && run_anim.load(Ordering::Relaxed) {
                     for frame in &frames {
-                        let now = Instant::now();
-
                         if !run_anim.load(Ordering::Relaxed) {
                             break;
                         }
@@ -559,7 +558,17 @@ fn main() -> ImageResult<()> {
                         print!("{linebuf}");
                         let _ = lock.flush();
 
-                        let elapsed = now.elapsed();
+                        let now = Instant::now();
+
+                        let elapsed = if timestamp > now {
+                            // This would mean that it slept shorter than requested, but didn't
+                            // signal any error!
+                            Duration::ZERO
+                        } else {
+                            now - timestamp
+                        };
+
+                        timestamp += duration;
 
                         if duration > elapsed && !interruptable_sleep(duration - elapsed) {
                             run_anim.store(false, Ordering::Relaxed);
