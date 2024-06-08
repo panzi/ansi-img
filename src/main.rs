@@ -461,7 +461,7 @@ struct Args {
     /// - nearest{n}
     /// - triangle{n}
     /// - catmull-rom (or catmullrom){n}
-    /// - caussian{n}
+    /// - gaussian{n}
     /// - lanczos3
     #[arg(short, long, default_value_t = Filter(imageops::FilterType::Nearest))]
     filter: Filter,
