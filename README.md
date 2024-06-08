@@ -78,7 +78,7 @@ Options:
            - nearest
            - triangle
            - catmull-rom (or catmullrom)
-           - caussian
+           - gaussian
            - lanczos3
           
           [default: Nearest]
