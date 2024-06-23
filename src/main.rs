@@ -96,7 +96,7 @@ fn write_frame_to_buf(lines: &[impl AsRef<str>], linebuf: &mut String) {
 pub enum Style {
     Center,
     Tile,
-    Position (u32, u32),
+    Position (i32, i32),
     Cover,
     Contain,
     ShrinkToFit,
