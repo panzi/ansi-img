@@ -96,7 +96,7 @@ fn write_frame_to_buf(lines: &[impl AsRef<str>], linebuf: &mut String) {
 pub enum Style {
     Center,
     Tile,
-    Position (i32, i32),
+    Position (i32, i32, i32),
     Cover,
     Contain,
     ShrinkToFit,
@@ -127,7 +127,7 @@ fn draw_contain(image: &RgbaImage, canvas: &mut RgbaImage, filter: imageops::Fil
 
 #[inline]
 fn draw_center(image: &RgbaImage, canvas: &mut RgbaImage) {
-    let x = (canvas.width() as i64 - image.width() as i64) / 2;
+    let x = (canvas.width()  as i64 - image.width()  as i64) / 2;
     let y = (canvas.height() as i64 - image.height() as i64) / 2;
     imageops::overlay(canvas, image, x, y);
 }
@@ -145,8 +145,42 @@ impl Style {
                     }
                 }
             },
-            Style::Position(x, y) => {
-                imageops::overlay(canvas, image, x.into(), y.into());
+            Style::Position(x, y, z) => {
+                if z == 1 {
+                    imageops::overlay(canvas, image, x.into(), y.into());
+                } else if z > 0 {
+                    let image_width  = image.width();
+                    let image_height = image.height();
+                    let width;
+                    let height;
+                    if image_width > image_height {
+                        if image_width > (u32::MAX / z as u32) {
+                            width  = u32::MAX;
+                            height = (u32::MAX as u64 * image_height as u64 / image_width as u64) as u32;
+                        } else {
+                            width  = image_width  * z as u32;
+                            height = image_height * z as u32;
+                        }
+                    } else {
+                        if image_height > (u32::MAX / z as u32) {
+                            width  = (u32::MAX as u64 * image_width as u64 / image_height as u64) as u32;
+                            height = u32::MAX;
+                        } else {
+                            width  = image_width  * z as u32;
+                            height = image_height * z as u32;
+                        }
+                    }
+                    let image = imageops::resize(image, width, height, filter);
+                    imageops::overlay(canvas, &image, x.into(), y.into());
+                } else {
+                    let width  = image.width()  / (-z as u32);
+                    let height = image.height() / (-z as u32);
+
+                    if width != 0 && height != 0 {
+                        let image = imageops::resize(image, width, height, filter);
+                        imageops::overlay(canvas, &image, x.into(), y.into());
+                    }
+                }
             },
             Style::Cover => {
                 if canvas.width() == image.width() && canvas.height() == image.height() {
@@ -192,8 +226,12 @@ impl Display for Style {
             Self::Tile => {
                 "tile".fmt(f)
             },
-            Self::Position(x, y) => {
-                write!(f, "position {x} {y}")
+            Self::Position(x, y, z) => {
+                if z < 0 {
+                    write!(f, "position {x} {y} 1/{}", -z)
+                } else {
+                    write!(f, "position {x} {y} {z}")
+                }
             },
             Self::Cover => {
                 "cover".fmt(f)
@@ -224,41 +262,218 @@ impl FromStr for Style {
     type Err = StyleParseError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        if value.eq_ignore_ascii_case("center") {
-            Ok(Style::Center)
-        } else if value.eq_ignore_ascii_case("tile") {
-            Ok(Style::Tile)
-        } else if value.eq_ignore_ascii_case("cover") {
-            Ok(Style::Cover)
-        } else if value.eq_ignore_ascii_case("contain") {
-            Ok(Style::Contain)
-        } else if value.eq_ignore_ascii_case("shrink-to-fit") || value.eq_ignore_ascii_case("shrinktofit") {
-            Ok(Style::ShrinkToFit)
-        } else {
-            let mut items = value.split_ascii_whitespace();
-            let Some(first) = items.next() else {
-                return Err(StyleParseError());
-            };
+        let mut tokenizer = StyleTokenizer::new(value);
 
-            if !first.eq_ignore_ascii_case("position") {
-                return Err(StyleParseError());
+        let Some(token) = tokenizer.next() else {
+            return Err(StyleParseError());
+        };
+
+        let token = token?;
+        match token {
+            StyleToken::Center => {
+                tokenizer.expect_end()?;
+                return Ok(Style::Center);
             }
-
-            let Some(Ok(x)) = items.next().map(|value| value.parse()) else {
-                return Err(StyleParseError());
-            };
-
-            let Some(Ok(y)) = items.next().map(|value| value.parse()) else {
-                return Err(StyleParseError());
-            };
-
-            if let Some(_) = items.next() {
-                return Err(StyleParseError());
+            StyleToken::Contain => {
+                tokenizer.expect_end()?;
+                return Ok(Style::Contain);
             }
+            StyleToken::Cover => {
+                tokenizer.expect_end()?;
+                return Ok(Style::Cover);
+            }
+            StyleToken::Tile => {
+                tokenizer.expect_end()?;
+                return Ok(Style::Tile);
+            }
+            StyleToken::ShrinkToFit => {
+                tokenizer.expect_end()?;
+                return Ok(Style::ShrinkToFit);
+            }
+            StyleToken::Position => {
+                let x = tokenizer.expect_int()?;
+                let y = tokenizer.expect_int()?;
+                let z = tokenizer.expect_int_or_end()?.unwrap_or(1);
 
-            Ok(Style::Position(x, y))
+                if z < 1 {
+                    return Err(StyleParseError());
+                }
+
+                let Some(token) = tokenizer.next() else {
+                    return Ok(Style::Position(x, y, z));
+                };
+                let token = token?;
+                if token != StyleToken::Slash {
+                    return Err(StyleParseError());
+                }
+
+                let divisor = tokenizer.expect_int()?;
+
+                if z != 1 || divisor < 1 {
+                    return Err(StyleParseError());
+                }
+
+                tokenizer.expect_end()?;
+
+                return Ok(Style::Position(x, y, -divisor));
+            },
+            _ => return Err(StyleParseError())
         }
     }
+}
+
+struct StyleTokenizer<'a> {
+    src: &'a str,
+    err: bool,
+}
+
+impl<'a> StyleTokenizer<'a> {
+    #[inline]
+    pub fn new(src: &'a str) -> Self {
+        Self { src, err: false }
+    }
+
+    pub fn expect_end(&mut self) -> Result<(), StyleParseError> {
+        let None = self.next() else {
+            return Err(StyleParseError());
+        };
+        Ok(())
+    }
+
+    pub fn expect_int_or_end(&mut self) -> Result<Option<i32>, StyleParseError> {
+        let Some(token) = self.next() else {
+            return Ok(None);
+        };
+
+        let token = token?;
+        match token {
+            StyleToken::Int(value) => return Ok(Some(value)),
+            _ => return Err(StyleParseError()),
+        }
+    }
+
+    pub fn expect_int(&mut self) -> Result<i32, StyleParseError> {
+        let Some(token) = self.next() else {
+            return Err(StyleParseError());
+        };
+
+        let token = token?;
+        match token {
+            StyleToken::Int(value) => return Ok(value),
+            _ => return Err(StyleParseError()),
+        }
+    }
+}
+
+impl<'a> Iterator for StyleTokenizer<'a> {
+    type Item = Result<StyleToken, StyleParseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.err {
+            return Some(Err(StyleParseError()));
+        }
+        let Some(index) = self.src.find(|ch: char| !ch.is_whitespace()) else {
+            return None;
+        };
+        self.src = &self.src[index..];
+        if self.src.starts_with('/') {
+            self.src = &self.src[1..];
+            return Some(Ok(StyleToken::Slash));
+        }
+
+        if self.src.starts_with(|ch: char| ch.is_ascii_alphabetic()) {
+            let index = self.src.find(|ch: char| !ch.is_alphanumeric() && ch != '_' && ch != '-').unwrap_or(self.src.len());
+            let value = &self.src[..index];
+
+            let token = if value.eq_ignore_ascii_case("center") {
+                StyleToken::Center
+            } else if value.eq_ignore_ascii_case("tile") {
+                StyleToken::Tile
+            } else if value.eq_ignore_ascii_case("cover") {
+                StyleToken::Cover
+            } else if value.eq_ignore_ascii_case("contain") {
+                StyleToken::Contain
+            } else if value.eq_ignore_ascii_case("shrink-to-fit") || value.eq_ignore_ascii_case("shrinktofit") {
+                StyleToken::ShrinkToFit
+            } else if value.eq_ignore_ascii_case("position") {
+                StyleToken::Position
+            } else {
+                self.err = true;
+                return Some(Err(StyleParseError()));
+            };
+            self.src = &self.src[index..];
+
+            return Some(Ok(token));
+        }
+
+        if !self.src.starts_with(|ch: char| ch == '-' || ch == '+' || (ch >= '0' && ch <= '9')) {
+            self.err = true;
+            return Some(Err(StyleParseError()));
+        }
+
+        let sign: i32;
+        if self.src.starts_with('+') {
+            self.src = &self.src[1..];
+            sign = 1;
+
+            if !self.src.starts_with(|ch: char| ch >= '0' && ch <= '9') {
+                self.err = true;
+                return Some(Err(StyleParseError()));
+            }
+        } else if self.src.starts_with('-') {
+            self.src = &self.src[1..];
+            sign = -1;
+
+            if !self.src.starts_with(|ch: char| ch >= '0' && ch <= '9') {
+                self.err = true;
+                return Some(Err(StyleParseError()));
+            }
+        } else {
+            sign = 1;
+        }
+
+        let mut value: i32 = 0;
+        loop {
+            let Some(ch) = self.src.chars().next() else {
+                break;
+            };
+
+            if !(ch >= '0' && ch <= '9') {
+                break;
+            }
+
+            if value > i32::MAX / 10 {
+                self.err = true;
+                return Some(Err(StyleParseError()));
+            }
+
+            value *= 10;
+
+            let digit = ch as i32 - '0' as i32;
+
+            if value > i32::MAX - digit {
+                self.err = true;
+                return Some(Err(StyleParseError()));
+            }
+
+            value += digit;
+            self.src = &self.src[1..];
+        }
+
+        Some(Ok(StyleToken::Int(sign * value)))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StyleToken {
+    Center,
+    Tile,
+    Cover,
+    Contain,
+    ShrinkToFit,
+    Position,
+    Int(i32),
+    Slash,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -436,10 +651,12 @@ struct Args {
     /// Values:{n}
     /// - center{n}
     /// - tile{n}
-    /// - position <x> <y>{n}
+    /// - position <x> <y> [z]{n}
     /// - cover{n}
     /// - contain{n}
     /// - shrink-to-fit (or shrinktofit)
+    /// 
+    /// z is a zoom value. It is either a whole number >= 1 or a fraction <= 1/2.
     #[arg(short, long, default_value_t = Style::ShrinkToFit)]
     style: Style,
 
