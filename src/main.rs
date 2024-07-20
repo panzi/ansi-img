@@ -757,20 +757,20 @@ fn main() -> ImageResult<()> {
 
     let mut linebuf = String::new();
     let mut lines: Vec<String> = vec![];
-    let mut term_canvas = match canvas_size {
-        CanvasSize::Exact(width, height) => Some(RgbaImage::new(width, height * 2)),
-        CanvasSize::Window =>
-            term_size::dimensions().map(|(width, height)|
-                match background_color {
-                    Color::Transparent => RgbaImage::new(width as u32, height as u32 * 2),
-                    Color::Solid(rgb) => RgbaImage::from_pixel(width as u32, height as u32 * 2, rgb.to_rgba()),
-                }),
-        CanvasSize::Image => None,
-    };
 
     enum DecodedImage {
         Animated(u32, u32, Vec<Frame>),
         Still(RgbaImage)
+    }
+
+    impl DecodedImage {
+        #[inline]
+        fn size(&self) -> (u32, u32) {
+            match self {
+                DecodedImage::Animated(width, height, _) => (*width, *height),
+                DecodedImage::Still(img) => (img.width(), img.height()),
+            }
+        }
     }
 
     let anim = match reader.format() {
@@ -816,6 +816,24 @@ fn main() -> ImageResult<()> {
             }
         },
         _ => DecodedImage::Still(reader.decode()?.to_rgba8())
+    };
+
+    let mut term_canvas = match canvas_size {
+        CanvasSize::Exact(width, height) => Some(RgbaImage::new(width, height * 2)),
+        CanvasSize::Window =>
+            term_size::dimensions().map(|(width, height)|
+                match background_color {
+                    Color::Transparent => RgbaImage::new(width as u32, height as u32 * 2),
+                    Color::Solid(rgb) => RgbaImage::from_pixel(width as u32, height as u32 * 2, rgb.to_rgba()),
+                }),
+        CanvasSize::Image =>
+            match background_color {
+                Color::Transparent => None,
+                Color::Solid(rgb) => {
+                    let (width, height) = anim.size();
+                    Some(RgbaImage::from_pixel(width, height, rgb.to_rgba()))
+                },
+            },
     };
 
     match anim {
