@@ -178,7 +178,7 @@ impl Size {
 pub enum Style {
     Center,
     Tile,
-    Position (i32, i32, Size),
+    Position (Option<i32>, Option<i32>, Size),
     Cover,
     Contain,
     ShrinkToFit,
@@ -232,12 +232,24 @@ impl Style {
                 let image_height = image.height();
                 let (w, h) = size.to_size(image_width, image_height);
 
+                let x = if let Some(x) = x {
+                    x.into()
+                } else {
+                    (canvas.width() as i64 - image_width as i64) / 2
+                };
+
+                let y = if let Some(y) = y {
+                    y.into()
+                } else {
+                    (canvas.height() as i64 - image_height as i64) / 2
+                };
+
                 if w > 0 && h > 0 {
                     if w == image_width && h == image_height {
-                        imageops::overlay(canvas, image, x.into(), y.into());
+                        imageops::overlay(canvas, image, x, y);
                     } else {
                         let image = imageops::resize(image, w, h, filter);
-                        imageops::overlay(canvas, &image, x.into(), y.into());
+                        imageops::overlay(canvas, &image, x, y);
                     }
                 }
             },
@@ -285,21 +297,31 @@ impl Display for Style {
             Self::Tile => {
                 "tile".fmt(f)
             },
-            Self::Position(x, y, Size::Scale(z)) => {
-                if z < 0 {
-                    write!(f, "position {x} {y} 1/{}", -z)
+            Self::Position(x, y, size) => {
+                if let Some(x) = x {
+                    write!(f, "{x}")?;
                 } else {
-                    write!(f, "position {x} {y} {z}")
+                    write!(f, "*")?;
                 }
-            },
-            Self::Position(x, y, Size::Exact(w, h)) => {
-                write!(f, "position {x} {y} {w} {h}")
-            },
-            Self::Position(x, y, Size::Width(w)) => {
-                write!(f, "position {x} {y} {w} *")
-            },
-            Self::Position(x, y, Size::Height(h)) => {
-                write!(f, "position {x} {y} * {h}")
+
+                if let Some(y) = y {
+                    write!(f, " {y}")?;
+                } else {
+                    write!(f, " *")?;
+                }
+
+                match size {
+                    Size::Scale(z) => {
+                        if z < 0 {
+                            write!(f, " 1/{}", -z)
+                        } else {
+                            write!(f, " {z}")
+                        }
+                    },
+                    Size::Exact(w, h) => write!(f, " {w} {h}"),
+                    Size::Width(w)  => write!(f, " {w} *"),
+                    Size::Height(h) => write!(f, " * {h}"),
+                }
             },
             Self::Cover => {
                 "cover".fmt(f)
@@ -326,8 +348,8 @@ impl Display for StyleParseError {
 
 impl std::error::Error for StyleParseError {}
 
-fn parse_position_rest(x: i32, mut tokenizer: StyleTokenizer) -> Result<Style, StyleParseError> {
-    let y = tokenizer.expect_int()?;
+fn parse_position_rest(x: Option<i32>, mut tokenizer: StyleTokenizer) -> Result<Style, StyleParseError> {
+    let y = tokenizer.expect_int_or_asterisk()?;
     let Some(token1) = tokenizer.next() else {
         return Ok(Style::Position(x, y, Size::Scale(1)));
     };
@@ -418,11 +440,14 @@ impl FromStr for Style {
                 return Ok(Style::ShrinkToFit);
             }
             StyleToken::Position => {
-                let x = tokenizer.expect_int()?;
+                let x = tokenizer.expect_int_or_asterisk()?;
                 return parse_position_rest(x, tokenizer);
             },
             StyleToken::Int(x) => {
-                return parse_position_rest(x, tokenizer);
+                return parse_position_rest(Some(x), tokenizer);
+            },
+            StyleToken::Asterisk => {
+                return parse_position_rest(None, tokenizer);
             },
             _ => return Err(StyleParseError())
         }
@@ -456,6 +481,19 @@ impl<'a> StyleTokenizer<'a> {
         let token = token?;
         match token {
             StyleToken::Int(value) => return Ok(value),
+            _ => return Err(StyleParseError()),
+        }
+    }
+
+    pub fn expect_int_or_asterisk(&mut self) -> Result<Option<i32>, StyleParseError> {
+        let Some(token) = self.next() else {
+            return Err(StyleParseError());
+        };
+
+        let token = token?;
+        match token {
+            StyleToken::Asterisk => return Ok(None),
+            StyleToken::Int(value) => return Ok(Some(value)),
             _ => return Err(StyleParseError()),
         }
     }
@@ -770,6 +808,7 @@ struct Args {
     /// - contain{n}
     /// - shrink-to-fit (or shrinktofit)
     /// 
+    /// x and y can be * to center within the canvas.
     /// z is a zoom value. It is either a whole number >= 1 or a fraction <= 1/2.{n}
     /// w and h can be * so it's derived from the respective other value.
     #[arg(short, long, default_value_t = Style::ShrinkToFit)]
@@ -946,11 +985,17 @@ fn main() -> ImageResult<()> {
                 Style::Position(x, y, size) => {
                     let (image_width, image_height) = anim.size();
                     let (w, h) = size.to_size(image_width, image_height);
+                    let x = x.unwrap_or(0);
+                    let y = y.unwrap_or(0);
+
+                    // TODO: fix integer overflow handling
+                    let w = (w as i64 + x as i64).max(0) as u32;
+                    let h = (h as i64 + y as i64).max(0) as u32;
 
                     if let Color::Solid(rgb) = background_color {
-                        Some(RgbaImage::from_pixel(x as u32 + w, y as u32 + h, rgb.to_rgba()))
+                        Some(RgbaImage::from_pixel(w, h, rgb.to_rgba()))
                     } else {
-                        Some(RgbaImage::new(x as u32 + w, y as u32 + h))
+                        Some(RgbaImage::new(w, h))
                     }
                 },
                 _ =>
