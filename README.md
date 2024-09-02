@@ -51,10 +51,12 @@ Options:
           Values:
            - center
            - tile
-           - position <x> <y>
+           - [position] <x> <y> [z]
            - cover
            - contain
            - shrink-to-fit (or shrinktofit)
+          
+          z is a zoom value. It is either a whole number >= 1 or a fraction <= 1/2.
           
           [default: shrink-to-fit]
 
