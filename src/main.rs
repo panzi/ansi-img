@@ -138,6 +138,42 @@ pub enum Size {
     Exact (u32, u32),
 }
 
+impl Size {
+    pub fn to_size(&self, image_width: u32, image_height: u32) -> (u32, u32) {
+        match *self {
+            Self::Scale(z) => {
+                let width;
+                let height;
+                if image_width > image_height {
+                    if image_width > (u32::MAX / z as u32) {
+                        width  = u32::MAX;
+                        height = (u32::MAX as u64 * image_height as u64 / image_width as u64) as u32;
+                    } else {
+                        width  = image_width  * z as u32;
+                        height = image_height * z as u32;
+                    }
+                } else {
+                    if image_height > (u32::MAX / z as u32) {
+                        width  = (u32::MAX as u64 * image_width as u64 / image_height as u64) as u32;
+                        height = u32::MAX;
+                    } else {
+                        width  = image_width  * z as u32;
+                        height = image_height * z as u32;
+                    }
+                }
+                (width, height)
+            },
+            Self::Width(w) => {
+                (w, w * image_height / image_width)
+            },
+            Self::Height(h) => {
+                (h, h * image_width / image_height)
+            },
+            Self::Exact(w, h) => (w, h),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Style {
     Center,
@@ -191,76 +227,15 @@ impl Style {
                     }
                 }
             },
-            Style::Position(x, y, Size::Scale(z)) => {
-                if z == 1 {
-                    imageops::overlay(canvas, image, x.into(), y.into());
-                } else if z > 0 {
-                    let image_width  = image.width();
-                    let image_height = image.height();
-                    let width;
-                    let height;
-                    if image_width > image_height {
-                        if image_width > (u32::MAX / z as u32) {
-                            width  = u32::MAX;
-                            height = (u32::MAX as u64 * image_height as u64 / image_width as u64) as u32;
-                        } else {
-                            width  = image_width  * z as u32;
-                            height = image_height * z as u32;
-                        }
-                    } else {
-                        if image_height > (u32::MAX / z as u32) {
-                            width  = (u32::MAX as u64 * image_width as u64 / image_height as u64) as u32;
-                            height = u32::MAX;
-                        } else {
-                            width  = image_width  * z as u32;
-                            height = image_height * z as u32;
-                        }
-                    }
-                    let image = imageops::resize(image, width, height, filter);
-                    imageops::overlay(canvas, &image, x.into(), y.into());
-                } else {
-                    let width  = image.width()  / (-z as u32);
-                    let height = image.height() / (-z as u32);
+            Style::Position(x, y, size) => {
+                let image_width  = image.width();
+                let image_height = image.height();
+                let (w, h) = size.to_size(image_width, image_height);
 
-                    if width != 0 && height != 0 {
-                        let image = imageops::resize(image, width, height, filter);
-                        imageops::overlay(canvas, &image, x.into(), y.into());
-                    }
-                }
-            },
-            Style::Position(x, y, Size::Exact(w, h)) => {
                 if w > 0 && h > 0 {
-                    let image_width  = image.width();
-                    let image_height = image.height();
                     if w == image_width && h == image_height {
                         imageops::overlay(canvas, image, x.into(), y.into());
                     } else {
-                        let image = imageops::resize(image, w, h, filter);
-                        imageops::overlay(canvas, &image, x.into(), y.into());
-                    }
-                }
-            },
-            Style::Position(x, y, Size::Width(w)) => {
-                if w > 0 {
-                    let image_width = image.width();
-                    if w == image_width {
-                        imageops::overlay(canvas, image, x.into(), y.into());
-                    } else {
-                        let image_height = image.height();
-                        let h = w * image_height / image_width;
-                        let image = imageops::resize(image, w, h, filter);
-                        imageops::overlay(canvas, &image, x.into(), y.into());
-                    }
-                }
-            },
-            Style::Position(x, y, Size::Height(h)) => {
-                if h > 0 {
-                    let image_height = image.height();
-                    if h == image_height {
-                        imageops::overlay(canvas, image, x.into(), y.into());
-                    } else {
-                        let image_width = image.width();
-                        let w = h * image_width / image_height;
                         let image = imageops::resize(image, w, h, filter);
                         imageops::overlay(canvas, &image, x.into(), y.into());
                     }
@@ -465,6 +440,7 @@ impl<'a> StyleTokenizer<'a> {
         Self { src, err: false }
     }
 
+    #[inline]
     pub fn expect_end(&mut self) -> Result<(), StyleParseError> {
         let None = self.next() else {
             return Err(StyleParseError());
@@ -603,6 +579,7 @@ enum StyleToken {
 }
 
 impl StyleToken {
+    #[inline]
     pub fn expect_int(&self) -> Result<i32, StyleParseError> {
         match self {
             StyleToken::Int(value) => Ok(*value),
@@ -636,6 +613,7 @@ impl CanvasSize {
 }
 
 impl Display for CanvasSize {
+    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             CanvasSize::Window => "window".fmt(f),
@@ -964,12 +942,24 @@ fn main() -> ImageResult<()> {
                     Color::Solid(rgb) => RgbaImage::from_pixel(width as u32, height as u32 * 2, rgb.to_rgba()),
                 }),
         CanvasSize::Image =>
-            match background_color {
-                Color::Transparent => None,
-                Color::Solid(rgb) => {
-                    let (width, height) = anim.size();
-                    Some(RgbaImage::from_pixel(width, height, rgb.to_rgba()))
+            match style {
+                Style::Position(x, y, size) => {
+                    let (image_width, image_height) = anim.size();
+                    let (w, h) = size.to_size(image_width, image_height);
+
+                    if let Color::Solid(rgb) = background_color {
+                        Some(RgbaImage::from_pixel(x as u32 + w, y as u32 + h, rgb.to_rgba()))
+                    } else {
+                        Some(RgbaImage::new(x as u32 + w, y as u32 + h))
+                    }
                 },
+                _ =>
+                    if let Color::Solid(rgb) = background_color {
+                        let (width, height) = anim.size();
+                        Some(RgbaImage::from_pixel(width, height, rgb.to_rgba()))
+                    } else {
+                        None
+                    }
             },
     };
 
