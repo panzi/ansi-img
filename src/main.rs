@@ -131,10 +131,18 @@ fn write_frame_to_buf(lines: &[impl AsRef<str>], linebuf: &mut String) {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Size {
+    Scale (i32),
+    Width (u32),
+    Height (u32),
+    Exact (u32, u32),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Style {
     Center,
     Tile,
-    Position (i32, i32, i32),
+    Position (i32, i32, Size),
     Cover,
     Contain,
     ShrinkToFit,
@@ -183,7 +191,7 @@ impl Style {
                     }
                 }
             },
-            Style::Position(x, y, z) => {
+            Style::Position(x, y, Size::Scale(z)) => {
                 if z == 1 {
                     imageops::overlay(canvas, image, x.into(), y.into());
                 } else if z > 0 {
@@ -216,6 +224,44 @@ impl Style {
 
                     if width != 0 && height != 0 {
                         let image = imageops::resize(image, width, height, filter);
+                        imageops::overlay(canvas, &image, x.into(), y.into());
+                    }
+                }
+            },
+            Style::Position(x, y, Size::Exact(w, h)) => {
+                if w > 0 && h > 0 {
+                    let image_width  = image.width();
+                    let image_height = image.height();
+                    if w == image_width && h == image_height {
+                        imageops::overlay(canvas, image, x.into(), y.into());
+                    } else {
+                        let image = imageops::resize(image, w, h, filter);
+                        imageops::overlay(canvas, &image, x.into(), y.into());
+                    }
+                }
+            },
+            Style::Position(x, y, Size::Width(w)) => {
+                if w > 0 {
+                    let image_width = image.width();
+                    if w == image_width {
+                        imageops::overlay(canvas, image, x.into(), y.into());
+                    } else {
+                        let image_height = image.height();
+                        let h = w * image_height / image_width;
+                        let image = imageops::resize(image, w, h, filter);
+                        imageops::overlay(canvas, &image, x.into(), y.into());
+                    }
+                }
+            },
+            Style::Position(x, y, Size::Height(h)) => {
+                if h > 0 {
+                    let image_height = image.height();
+                    if h == image_height {
+                        imageops::overlay(canvas, image, x.into(), y.into());
+                    } else {
+                        let image_width = image.width();
+                        let w = h * image_width / image_height;
+                        let image = imageops::resize(image, w, h, filter);
                         imageops::overlay(canvas, &image, x.into(), y.into());
                     }
                 }
@@ -264,12 +310,21 @@ impl Display for Style {
             Self::Tile => {
                 "tile".fmt(f)
             },
-            Self::Position(x, y, z) => {
+            Self::Position(x, y, Size::Scale(z)) => {
                 if z < 0 {
                     write!(f, "position {x} {y} 1/{}", -z)
                 } else {
                     write!(f, "position {x} {y} {z}")
                 }
+            },
+            Self::Position(x, y, Size::Exact(w, h)) => {
+                write!(f, "position {x} {y} {w} {h}")
+            },
+            Self::Position(x, y, Size::Width(w)) => {
+                write!(f, "position {x} {y} {w} *")
+            },
+            Self::Position(x, y, Size::Height(h)) => {
+                write!(f, "position {x} {y} * {h}")
             },
             Self::Cover => {
                 "cover".fmt(f)
@@ -295,6 +350,65 @@ impl Display for StyleParseError {
 }
 
 impl std::error::Error for StyleParseError {}
+
+fn parse_position_rest(x: i32, mut tokenizer: StyleTokenizer) -> Result<Style, StyleParseError> {
+    let y = tokenizer.expect_int()?;
+    let Some(token1) = tokenizer.next() else {
+        return Ok(Style::Position(x, y, Size::Scale(1)));
+    };
+
+    let token1 = token1?;
+    let Some(token2) = tokenizer.next() else {
+        let z = token1.expect_int()?;
+        if z < 1 {
+            return Err(StyleParseError());
+        }
+        return Ok(Style::Position(x, y, Size::Scale(z)));
+    };
+    let token2 = token2?;
+
+    match (token1, token2) {
+        (StyleToken::Asterisk, StyleToken::Asterisk) => {
+            tokenizer.expect_end()?;
+            return Ok(Style::Position(x, y, Size::Scale(1)));
+        }
+        (StyleToken::Asterisk, StyleToken::Int(h)) => {
+            if h < 0 {
+                return Err(StyleParseError());
+            }
+            tokenizer.expect_end()?;
+            return Ok(Style::Position(x, y, Size::Height(h as u32)));
+        }
+        (StyleToken::Int(w), StyleToken::Asterisk) => {
+            if w < 0 {
+                return Err(StyleParseError());
+            }
+            tokenizer.expect_end()?;
+            return Ok(Style::Position(x, y, Size::Width(w as u32)));
+        }
+        (StyleToken::Int(w), StyleToken::Int(h)) => {
+            if w < 0 || h < 0 {
+                return Err(StyleParseError());
+            }
+            tokenizer.expect_end()?;
+            return Ok(Style::Position(x, y, Size::Exact(w as u32, h as u32)));
+        }
+        (StyleToken::Int(1), StyleToken::Slash) => {
+            let divisor = tokenizer.expect_int()?;
+
+            if divisor < 1 {
+                return Err(StyleParseError());
+            }
+
+            tokenizer.expect_end()?;
+
+            return Ok(Style::Position(x, y, Size::Scale(-divisor)));
+        }
+        _ => {
+            return Err(StyleParseError());
+        }
+    }
+}
 
 impl FromStr for Style {
     type Err = StyleParseError;
@@ -330,56 +444,10 @@ impl FromStr for Style {
             }
             StyleToken::Position => {
                 let x = tokenizer.expect_int()?;
-                let y = tokenizer.expect_int()?;
-                let z = tokenizer.expect_int_or_end()?.unwrap_or(1);
-
-                if z < 1 {
-                    return Err(StyleParseError());
-                }
-
-                let Some(token) = tokenizer.next() else {
-                    return Ok(Style::Position(x, y, z));
-                };
-                let token = token?;
-                if token != StyleToken::Slash {
-                    return Err(StyleParseError());
-                }
-
-                let divisor = tokenizer.expect_int()?;
-
-                if z != 1 || divisor < 1 {
-                    return Err(StyleParseError());
-                }
-
-                tokenizer.expect_end()?;
-
-                return Ok(Style::Position(x, y, -divisor));
+                return parse_position_rest(x, tokenizer);
             },
             StyleToken::Int(x) => {
-                let y = tokenizer.expect_int()?;
-                let z = tokenizer.expect_int_or_end()?.unwrap_or(1);
-
-                if z < 1 {
-                    return Err(StyleParseError());
-                }
-
-                let Some(token) = tokenizer.next() else {
-                    return Ok(Style::Position(x, y, z));
-                };
-                let token = token?;
-                if token != StyleToken::Slash {
-                    return Err(StyleParseError());
-                }
-
-                let divisor = tokenizer.expect_int()?;
-
-                if z != 1 || divisor < 1 {
-                    return Err(StyleParseError());
-                }
-
-                tokenizer.expect_end()?;
-
-                return Ok(Style::Position(x, y, -divisor));
+                return parse_position_rest(x, tokenizer);
             },
             _ => return Err(StyleParseError())
         }
@@ -402,18 +470,6 @@ impl<'a> StyleTokenizer<'a> {
             return Err(StyleParseError());
         };
         Ok(())
-    }
-
-    pub fn expect_int_or_end(&mut self) -> Result<Option<i32>, StyleParseError> {
-        let Some(token) = self.next() else {
-            return Ok(None);
-        };
-
-        let token = token?;
-        match token {
-            StyleToken::Int(value) => return Ok(Some(value)),
-            _ => return Err(StyleParseError()),
-        }
     }
 
     pub fn expect_int(&mut self) -> Result<i32, StyleParseError> {
@@ -443,6 +499,11 @@ impl<'a> Iterator for StyleTokenizer<'a> {
         if self.src.starts_with('/') {
             self.src = &self.src[1..];
             return Some(Ok(StyleToken::Slash));
+        }
+
+        if self.src.starts_with('*') {
+            self.src = &self.src[1..];
+            return Some(Ok(StyleToken::Asterisk));
         }
 
         if self.src.starts_with(|ch: char| ch.is_ascii_alphabetic()) {
@@ -538,6 +599,16 @@ enum StyleToken {
     Position,
     Int(i32),
     Slash,
+    Asterisk,
+}
+
+impl StyleToken {
+    pub fn expect_int(&self) -> Result<i32, StyleParseError> {
+        match self {
+            StyleToken::Int(value) => Ok(*value),
+            _ => Err(StyleParseError())
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -715,12 +786,14 @@ struct Args {
     /// Values:{n}
     /// - center{n}
     /// - tile{n}
-    /// - [position] <x> <y> [z]{n}
+    /// - <x> <y> [z]{n}
+    /// - <x> <y> <w> <h>{n}
     /// - cover{n}
     /// - contain{n}
     /// - shrink-to-fit (or shrinktofit)
     /// 
-    /// z is a zoom value. It is either a whole number >= 1 or a fraction <= 1/2.
+    /// z is a zoom value. It is either a whole number >= 1 or a fraction <= 1/2.{n}
+    /// w and h can be * so it's derived from the respective other value.
     #[arg(short, long, default_value_t = Style::ShrinkToFit)]
     style: Style,
 
