@@ -51,12 +51,17 @@ Options:
           Values:
            - center
            - tile
-           - [position] <x> <y> [z]
+           - <x> <y> [z]
+           - <x> <y> <w> <h>
            - cover
            - contain
            - shrink-to-fit (or shrinktofit)
           
+          x and y can be * to center within the canvas.
+          
           z is a zoom value. It is either a whole number >= 1 or a fraction <= 1/2.
+          
+          w and h can be * so it's derived from the respective other value.
           
           [default: shrink-to-fit]
 
