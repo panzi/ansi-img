@@ -47,6 +47,8 @@ pub fn image_to_ansi_into(image: &RgbaImage, alpha_threshold: u8, lines: &mut Ve
                 prev_color = color;
             }
         } else {
+            let mut prev_bg = Rgba([0, 0, 0, 0]);
+            let mut prev_fg = Rgba([0, 0, 0, 0]);
             for x in 0..image.width() {
                 let color_top    = *image.get_pixel(x, y);
                 let color_bottom = *image.get_pixel(x, y + 1);
@@ -54,20 +56,56 @@ pub fn image_to_ansi_into(image: &RgbaImage, alpha_threshold: u8, lines: &mut Ve
 
                 if color_top == color_bottom {
                     if a1 < alpha_threshold {
-                        line.push_str("\x1B[0m ");
+                        if prev_bg.0[3] < alpha_threshold && prev_fg.0[3] < alpha_threshold {
+                            line.push_str(" ");
+                        } else {
+                            line.push_str("\x1B[0m ");
+                        }
                     } else {
                         let _ = write!(line, "\x1B[38;2;{r1};{g1};{b1}m█");
                     }
+                    prev_fg = color_top;
+                    prev_bg = color_top;
                 } else {
                     let Rgba([r2, g2, b2, a2]) = color_bottom;
                     if a1 < alpha_threshold && a2 < alpha_threshold {
-                        line.push_str("\x1B[0m ");
+                        if prev_bg.0[3] < alpha_threshold && prev_fg.0[3] < alpha_threshold {
+                            line.push_str(" ");
+                        } else {
+                            line.push_str("\x1B[0m ");
+                        }
+                        prev_fg = color_top;
+                        prev_bg = color_bottom;
                     } else if a1 < alpha_threshold {
                         let _ = write!(line, "\x1B[0m\x1B[38;2;{r2};{g2};{b2}m▄");
+                        prev_fg = color_bottom;
+                        prev_bg = color_top;
                     } else if a2 < alpha_threshold {
                         let _ = write!(line, "\x1B[0m\x1B[38;2;{r1};{g1};{b1}m▀");
+                        prev_fg = color_top;
+                        prev_bg = color_bottom;
                     } else {
-                        let _ = write!(line, "\x1B[48;2;{r1};{g1};{b1}m\x1B[38;2;{r2};{g2};{b2}m▄");
+                        if prev_fg == color_bottom && prev_bg == color_top {
+                            let _ = write!(line, "▄");
+                        } else if prev_fg == color_top && prev_bg == color_bottom {
+                            let _ = write!(line, "▀");
+                        } else if prev_fg == color_bottom {
+                            let _ = write!(line, "\x1B[48;2;{r1};{g1};{b1}m▄");
+                            prev_bg = color_top;
+                        } else if prev_fg == color_top {
+                            let _ = write!(line, "\x1B[48;2;{r2};{g2};{b2}m▀");
+                            prev_bg = color_bottom;
+                        } else if prev_bg == color_top {
+                            let _ = write!(line, "\x1B[38;2;{r2};{g2};{b2}m▄");
+                            prev_fg = color_bottom;
+                        } else if prev_bg == color_bottom {
+                            let _ = write!(line, "\x1B[38;2;{r1};{g1};{b1}m▀");
+                            prev_fg = color_top;
+                        } else {
+                            let _ = write!(line, "\x1B[48;2;{r1};{g1};{b1}m\x1B[38;2;{r2};{g2};{b2}m▄");
+                            prev_fg = color_bottom;
+                            prev_bg = color_top;
+                        }
                     }
                 }
             }
