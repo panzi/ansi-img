@@ -355,6 +355,32 @@ impl FromStr for Style {
 
                 return Ok(Style::Position(x, y, -divisor));
             },
+            StyleToken::Int(x) => {
+                let y = tokenizer.expect_int()?;
+                let z = tokenizer.expect_int_or_end()?.unwrap_or(1);
+
+                if z < 1 {
+                    return Err(StyleParseError());
+                }
+
+                let Some(token) = tokenizer.next() else {
+                    return Ok(Style::Position(x, y, z));
+                };
+                let token = token?;
+                if token != StyleToken::Slash {
+                    return Err(StyleParseError());
+                }
+
+                let divisor = tokenizer.expect_int()?;
+
+                if z != 1 || divisor < 1 {
+                    return Err(StyleParseError());
+                }
+
+                tokenizer.expect_end()?;
+
+                return Ok(Style::Position(x, y, -divisor));
+            },
             _ => return Err(StyleParseError())
         }
     }
@@ -689,7 +715,7 @@ struct Args {
     /// Values:{n}
     /// - center{n}
     /// - tile{n}
-    /// - position <x> <y> [z]{n}
+    /// - [position] <x> <y> [z]{n}
     /// - cover{n}
     /// - contain{n}
     /// - shrink-to-fit (or shrinktofit)
