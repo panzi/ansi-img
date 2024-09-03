@@ -144,23 +144,29 @@ impl Size {
             Self::Scale(z) => {
                 let width;
                 let height;
-                if image_width > image_height {
-                    if image_width > (u32::MAX / z as u32) {
-                        width  = u32::MAX;
-                        height = (u32::MAX as u64 * image_height as u64 / image_width as u64) as u32;
+                if z > 1 {
+                    if image_width > image_height {
+                        if image_width > (u32::MAX / z as u32) {
+                            width  = u32::MAX;
+                            height = (u32::MAX as u64 * image_height as u64 / image_width as u64) as u32;
+                        } else {
+                            width  = image_width  * z as u32;
+                            height = image_height * z as u32;
+                        }
                     } else {
-                        width  = image_width  * z as u32;
-                        height = image_height * z as u32;
+                        if image_height > (u32::MAX / z as u32) {
+                            width  = (u32::MAX as u64 * image_width as u64 / image_height as u64) as u32;
+                            height = u32::MAX;
+                        } else {
+                            width  = image_width  * z as u32;
+                            height = image_height * z as u32;
+                        }
                     }
                 } else {
-                    if image_height > (u32::MAX / z as u32) {
-                        width  = (u32::MAX as u64 * image_width as u64 / image_height as u64) as u32;
-                        height = u32::MAX;
-                    } else {
-                        width  = image_width  * z as u32;
-                        height = image_height * z as u32;
-                    }
+                    width  = image_width  / (-z as u32);
+                    height = image_height / (-z as u32);
                 }
+
                 (width, height)
             },
             Self::Width(w) => {
