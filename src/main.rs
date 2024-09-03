@@ -241,13 +241,13 @@ impl Style {
                 let x = if let Some(x) = x {
                     x.into()
                 } else {
-                    (canvas.width() as i64 - image_width as i64) / 2
+                    (canvas.width() as i64 - w as i64) / 2
                 };
 
                 let y = if let Some(y) = y {
                     y.into()
                 } else {
-                    (canvas.height() as i64 - image_height as i64) / 2
+                    (canvas.height() as i64 - h as i64) / 2
                 };
 
                 if w > 0 && h > 0 {
