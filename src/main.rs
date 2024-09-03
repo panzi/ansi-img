@@ -23,9 +23,13 @@ pub fn image_to_ansi(image: &RgbaImage, alpha_threshold: u8) -> Vec<String> {
 
 pub fn image_to_ansi_into(image: &RgbaImage, alpha_threshold: u8, lines: &mut Vec<String>) {
     let line_len = (image.width() as usize) * "\x1B[38;2;255;255;255\x1B[48;2;255;255;255m▄".len() + "\x1B[0m".len();
+    let row_count = (image.height() + 1) / 2;
 
-    for line_y in 0..((image.height() + 1) / 2) {
-        let mut line = String::with_capacity(line_len);
+    lines.resize_with(row_count as usize, || String::with_capacity(line_len));
+
+    for line_y in 0..row_count {
+        let line = &mut lines[line_y as usize];
+        line.clear();
 
         let y = line_y * 2;
         if y + 1 == image.height() {
@@ -112,7 +116,6 @@ pub fn image_to_ansi_into(image: &RgbaImage, alpha_threshold: u8, lines: &mut Ve
         }
 
         line.push_str("\x1B[0m");
-        lines.push(line);
     }
 }
 
