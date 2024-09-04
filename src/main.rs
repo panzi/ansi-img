@@ -119,7 +119,7 @@ pub fn image_to_ansi_into(image: &RgbaImage, alpha_threshold: u8, lines: &mut Ve
     }
 }
 
-fn write_frame_to_buf(lines: &[impl AsRef<str>], linebuf: &mut String) {
+fn write_frame_to_buf(lines: &[impl AsRef<str>], linebuf: &mut String, endl: &str) {
     linebuf.clear();
     linebuf.push_str("\x1B[1;1H\x1B[2J");
     let mut first = true;
@@ -127,7 +127,7 @@ fn write_frame_to_buf(lines: &[impl AsRef<str>], linebuf: &mut String) {
         if first {
             first = false;
         } else {
-            linebuf.push('\n');
+            linebuf.push_str(endl);
         }
         linebuf.push_str(line.as_ref());
     }
@@ -797,6 +797,69 @@ impl FromStr for Color {
     }
 }
 
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum LineEnd {
+    Cr,
+    Lf,
+    CrLf,
+}
+
+impl LineEnd {
+    #[inline]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Cr => "\r",
+            Self::Lf => "\n",
+            Self::CrLf => "\r\n",
+        }
+    }
+}
+
+impl Default for LineEnd {
+    #[inline]
+    fn default() -> Self {
+        Self::Lf
+    }
+}
+
+impl ToString for LineEnd {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Cr => "Cr",
+            Self::Lf => "Lf",
+            Self::CrLf => "CrLf",
+        }.to_string()
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct LineEndParseError();
+
+impl Display for LineEndParseError {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        "illegal line end value".fmt(f)
+    }
+}
+
+impl std::error::Error for LineEndParseError {}
+
+impl FromStr for LineEnd {
+    type Err = LineEndParseError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        if value.eq_ignore_ascii_case("cr") {
+            Ok(LineEnd::Cr)
+        } else if value.eq_ignore_ascii_case("lf") {
+            Ok(LineEnd::Lf)
+        } else if value.eq_ignore_ascii_case("crlf") || value.eq_ignore_ascii_case("cr-lf") {
+            Ok(LineEnd::CrLf)
+        } else {
+            Err(LineEndParseError())
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -856,6 +919,15 @@ struct Args {
     #[arg(short, long, default_value_t = Color::Transparent)]
     background_color: Color,
 
+    /// Line ending to use.
+    /// 
+    /// Values:{n}
+    /// - Cr{n}
+    /// - Lf{n}
+    /// - CrLf
+    #[arg(short, long, default_value_t = LineEnd::Lf)]
+    line_end: LineEnd,
+
     #[arg()]
     path: OsString,
 }
@@ -907,6 +979,7 @@ fn main() -> ImageResult<()> {
     let path = args.path;
     let filter = args.filter.0;
     let background_color = args.background_color;
+    let endl = args.line_end.as_str();
 
     {
         let run_anim = run_anim.clone();
@@ -1080,7 +1153,7 @@ fn main() -> ImageResult<()> {
                         } else {
                             image_to_ansi_into(&frame_canvas, alpha_threshold, &mut lines);
                         }
-                        write_frame_to_buf(&lines, &mut linebuf);
+                        write_frame_to_buf(&lines, &mut linebuf, endl);
 
                         print!("{linebuf}");
                         let _ = lock.flush();
@@ -1116,14 +1189,14 @@ fn main() -> ImageResult<()> {
             } else {
                 image_to_ansi_into(&image, alpha_threshold, &mut lines);
             }
-            write_frame_to_buf(&lines, &mut linebuf);
+            write_frame_to_buf(&lines, &mut linebuf, endl);
 
             print!("{linebuf}");
             let _ = lock.flush();
         }
     }
 
-    print!("\x1B[0m\x1B[?25h\x1B[?7h\n");
+    print!("\x1B[0m\x1B[?25h\x1B[?7h{endl}");
 
     Ok(())
 }
