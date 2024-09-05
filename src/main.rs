@@ -19,20 +19,6 @@ use image_to_ansi::image_to_ansi_into;
 pub mod image_to_ansi;
 pub mod cli;
 
-fn write_frame_to_buf(lines: &[impl AsRef<str>], linebuf: &mut String, endl: &str) {
-    linebuf.clear();
-    linebuf.push_str("\x1B[1;1H");
-    let mut first = true;
-    for line in lines {
-        if first {
-            first = false;
-        } else {
-            linebuf.push_str(endl);
-        }
-        linebuf.push_str(line.as_ref());
-    }
-}
-
 fn interruptable_sleep(duration: Duration) -> bool {
     #[cfg(target_family = "unix")]
     {
@@ -95,7 +81,6 @@ fn main() -> ImageResult<()> {
     print!("\x1B[?25l\x1B[?7l");
 
     let mut linebuf = String::new();
-    let mut lines: Vec<String> = vec![];
 
     enum DecodedImage {
         Animated(u32, u32, Vec<Frame>),
@@ -260,15 +245,14 @@ fn main() -> ImageResult<()> {
 
                             style.paint(&frame_canvas, term_canvas, filter);
 
-                            image_to_ansi_into(&prev_frame, term_canvas, alpha_threshold, &mut lines);
+                            image_to_ansi_into(&prev_frame, term_canvas, alpha_threshold, endl, &mut linebuf);
                             std::mem::swap(&mut prev_frame, term_canvas);
                         } else {
-                            image_to_ansi_into(&prev_frame, &frame_canvas, alpha_threshold, &mut lines);
+                            image_to_ansi_into(&prev_frame, &frame_canvas, alpha_threshold, endl, &mut linebuf);
                             std::mem::swap(&mut prev_frame, &mut frame_canvas);
                         }
-                        write_frame_to_buf(&lines, &mut linebuf, endl);
 
-                        print!("{linebuf}");
+                        print!("\x1B[1;1H{linebuf}");
                         let _ = lock.flush();
 
                         let now = Instant::now();
@@ -298,13 +282,12 @@ fn main() -> ImageResult<()> {
         DecodedImage::Still(image) => {
             if let Some(term_canvas) = &mut term_canvas {
                 style.paint(&image, term_canvas, filter);
-                image_to_ansi_into(&prev_frame, &term_canvas, alpha_threshold, &mut lines);
+                image_to_ansi_into(&prev_frame, &term_canvas, alpha_threshold, endl, &mut linebuf);
             } else {
-                image_to_ansi_into(&prev_frame, &image, alpha_threshold, &mut lines);
+                image_to_ansi_into(&prev_frame, &image, alpha_threshold, endl, &mut linebuf);
             }
-            write_frame_to_buf(&lines, &mut linebuf, endl);
 
-            print!("{linebuf}");
+            print!("\x1B[1;1H{linebuf}");
             let _ = lock.flush();
         }
     }
