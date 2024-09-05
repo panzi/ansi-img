@@ -234,7 +234,6 @@ fn main() -> ImageResult<()> {
                             frame_canvas.copy_from(frame_image, frame.left(), frame.top())?;
                         }
 
-                        lines.clear();
                         if let Some(term_canvas) = &mut term_canvas {
                             if canvas_size.is_window() {
                                 if let Some((term_width, term_height)) = term_size::dimensions() {
