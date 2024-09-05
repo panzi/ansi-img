@@ -15,13 +15,13 @@ use image::error::ImageResult;
 use image::{AnimationDecoder, DynamicImage, Frame, GenericImage, ImageDecoder, Pixel, Rgb, Rgba, RgbaImage};
 use image::imageops;
 
-pub fn image_to_ansi(image: &RgbaImage, alpha_threshold: u8) -> Vec<String> {
+pub fn image_to_ansi(prev_frame: &RgbaImage, image: &RgbaImage, alpha_threshold: u8) -> Vec<String> {
     let mut lines = vec![];
-    image_to_ansi_into(image, alpha_threshold, &mut lines);
+    image_to_ansi_into(prev_frame, image, alpha_threshold, &mut lines);
     lines
 }
 
-pub fn image_to_ansi_into(image: &RgbaImage, alpha_threshold: u8, lines: &mut Vec<String>) {
+pub fn image_to_ansi_into(prev_frame: &RgbaImage, image: &RgbaImage, alpha_threshold: u8, lines: &mut Vec<String>) {
     let line_len = (image.width() as usize) * "\x1B[38;2;255;255;255\x1B[48;2;255;255;255m▄".len() + "\x1B[0m".len();
     let row_count = (image.height() + 1) / 2;
 
@@ -34,81 +34,108 @@ pub fn image_to_ansi_into(image: &RgbaImage, alpha_threshold: u8, lines: &mut Ve
         let y = line_y * 2;
         if y + 1 == image.height() {
             let mut prev_color = Rgba([0, 0, 0, 0]);
+            let mut x_skip = 0;
             for x in 0..image.width() {
                 let color = *image.get_pixel(x, y);
-                let Rgba([r, g, b, a]) = color;
-                if a < alpha_threshold {
-                    if prev_color[3] < alpha_threshold {
-                        line.push(' ');
-                    } else {
-                        line.push_str("\x1B[0m ");
-                    }
-                } else if color == prev_color {
-                    line.push('▀');
+                if color == *prev_frame.get_pixel(x, y) {
+                    x_skip += 1;
                 } else {
-                    let _ = write!(line, "\x1B[38;2;{r};{g};{b}m▀");
+                    if x_skip > 0 {
+                        if x_skip == 1 {
+                            line.push_str("\x1B[C");
+                        } else {
+                            let _ = write!(line, "\x1B[{x_skip}C");
+                        }
+                        x_skip = 0;
+                    }
+                    let Rgba([r, g, b, a]) = color;
+                    if a < alpha_threshold {
+                        if prev_color[3] < alpha_threshold {
+                            line.push(' ');
+                        } else {
+                            line.push_str("\x1B[0m ");
+                        }
+                    } else if color == prev_color {
+                        line.push('▀');
+                    } else {
+                        let _ = write!(line, "\x1B[38;2;{r};{g};{b}m▀");
+                    }
+                    prev_color = color;
                 }
-                prev_color = color;
             }
         } else {
             let mut prev_bg = Rgba([0, 0, 0, 0]);
             let mut prev_fg = Rgba([0, 0, 0, 0]);
+            let mut x_skip = 0;
             for x in 0..image.width() {
                 let color_top    = *image.get_pixel(x, y);
                 let color_bottom = *image.get_pixel(x, y + 1);
-                let Rgba([r1, g1, b1, a1]) = color_top;
 
-                if color_top == color_bottom {
-                    if a1 < alpha_threshold {
-                        if prev_bg.0[3] < alpha_threshold && prev_fg.0[3] < alpha_threshold {
-                            line.push_str(" ");
-                        } else {
-                            line.push_str("\x1B[0m ");
-                        }
-                    } else {
-                        let _ = write!(line, "\x1B[38;2;{r1};{g1};{b1}m█");
-                    }
-                    prev_fg = color_top;
-                    prev_bg = color_top;
+                if color_top == *prev_frame.get_pixel(x, y) && color_bottom == *prev_frame.get_pixel(x, y + 1) {
+                    x_skip += 1;
                 } else {
-                    let Rgba([r2, g2, b2, a2]) = color_bottom;
-                    if a1 < alpha_threshold && a2 < alpha_threshold {
-                        if prev_bg.0[3] < alpha_threshold && prev_fg.0[3] < alpha_threshold {
-                            line.push_str(" ");
+                    if x_skip > 0 {
+                        if x_skip == 1 {
+                            line.push_str("\x1B[C");
                         } else {
-                            line.push_str("\x1B[0m ");
+                            let _ = write!(line, "\x1B[{x_skip}C");
+                        }
+                        x_skip = 0;
+                    }
+                    let Rgba([r1, g1, b1, a1]) = color_top;
+
+                    if color_top == color_bottom {
+                        if a1 < alpha_threshold {
+                            if prev_bg.0[3] < alpha_threshold && prev_fg.0[3] < alpha_threshold {
+                                line.push_str(" ");
+                            } else {
+                                line.push_str("\x1B[0m ");
+                            }
+                        } else {
+                            let _ = write!(line, "\x1B[38;2;{r1};{g1};{b1}m█");
                         }
                         prev_fg = color_top;
-                        prev_bg = color_bottom;
-                    } else if a1 < alpha_threshold {
-                        let _ = write!(line, "\x1B[0m\x1B[38;2;{r2};{g2};{b2}m▄");
-                        prev_fg = color_bottom;
                         prev_bg = color_top;
-                    } else if a2 < alpha_threshold {
-                        let _ = write!(line, "\x1B[0m\x1B[38;2;{r1};{g1};{b1}m▀");
-                        prev_fg = color_top;
-                        prev_bg = color_bottom;
                     } else {
-                        if prev_fg == color_bottom && prev_bg == color_top {
-                            let _ = write!(line, "▄");
-                        } else if prev_fg == color_top && prev_bg == color_bottom {
-                            let _ = write!(line, "▀");
-                        } else if prev_fg == color_bottom {
-                            let _ = write!(line, "\x1B[48;2;{r1};{g1};{b1}m▄");
-                            prev_bg = color_top;
-                        } else if prev_fg == color_top {
-                            let _ = write!(line, "\x1B[48;2;{r2};{g2};{b2}m▀");
-                            prev_bg = color_bottom;
-                        } else if prev_bg == color_top {
-                            let _ = write!(line, "\x1B[38;2;{r2};{g2};{b2}m▄");
-                            prev_fg = color_bottom;
-                        } else if prev_bg == color_bottom {
-                            let _ = write!(line, "\x1B[38;2;{r1};{g1};{b1}m▀");
+                        let Rgba([r2, g2, b2, a2]) = color_bottom;
+                        if a1 < alpha_threshold && a2 < alpha_threshold {
+                            if prev_bg.0[3] < alpha_threshold && prev_fg.0[3] < alpha_threshold {
+                                line.push_str(" ");
+                            } else {
+                                line.push_str("\x1B[0m ");
+                            }
                             prev_fg = color_top;
-                        } else {
-                            let _ = write!(line, "\x1B[48;2;{r1};{g1};{b1}m\x1B[38;2;{r2};{g2};{b2}m▄");
+                            prev_bg = color_bottom;
+                        } else if a1 < alpha_threshold {
+                            let _ = write!(line, "\x1B[0m\x1B[38;2;{r2};{g2};{b2}m▄");
                             prev_fg = color_bottom;
                             prev_bg = color_top;
+                        } else if a2 < alpha_threshold {
+                            let _ = write!(line, "\x1B[0m\x1B[38;2;{r1};{g1};{b1}m▀");
+                            prev_fg = color_top;
+                            prev_bg = color_bottom;
+                        } else {
+                            if prev_fg == color_bottom && prev_bg == color_top {
+                                let _ = write!(line, "▄");
+                            } else if prev_fg == color_top && prev_bg == color_bottom {
+                                let _ = write!(line, "▀");
+                            } else if prev_fg == color_bottom {
+                                let _ = write!(line, "\x1B[48;2;{r1};{g1};{b1}m▄");
+                                prev_bg = color_top;
+                            } else if prev_fg == color_top {
+                                let _ = write!(line, "\x1B[48;2;{r2};{g2};{b2}m▀");
+                                prev_bg = color_bottom;
+                            } else if prev_bg == color_top {
+                                let _ = write!(line, "\x1B[38;2;{r2};{g2};{b2}m▄");
+                                prev_fg = color_bottom;
+                            } else if prev_bg == color_bottom {
+                                let _ = write!(line, "\x1B[38;2;{r1};{g1};{b1}m▀");
+                                prev_fg = color_top;
+                            } else {
+                                let _ = write!(line, "\x1B[48;2;{r1};{g1};{b1}m\x1B[38;2;{r2};{g2};{b2}m▄");
+                                prev_fg = color_bottom;
+                                prev_bg = color_top;
+                            }
                         }
                     }
                 }
@@ -121,7 +148,7 @@ pub fn image_to_ansi_into(image: &RgbaImage, alpha_threshold: u8, lines: &mut Ve
 
 fn write_frame_to_buf(lines: &[impl AsRef<str>], linebuf: &mut String, endl: &str) {
     linebuf.clear();
-    linebuf.push_str("\x1B[1;1H\x1B[2J");
+    linebuf.push_str("\x1B[1;1H");
     let mut first = true;
     for line in lines {
         if first {
@@ -1092,6 +1119,15 @@ fn main() -> ImageResult<()> {
             },
     };
 
+    let mut prev_frame = if let Some(term_canvas) = &term_canvas {
+        RgbaImage::new(term_canvas.width(), term_canvas.height())
+    } else {
+        let (width, height) = anim.size();
+        RgbaImage::new(width, height)
+    };
+
+    print!("\x1B[2J");
+
     match anim {
         DecodedImage::Animated(width, height, frames) => {
             if !frames.is_empty() {
@@ -1128,7 +1164,7 @@ fn main() -> ImageResult<()> {
                         if let Some(term_canvas) = &mut term_canvas {
                             if canvas_size.is_window() {
                                 if let Some((term_width, term_height)) = term_size::dimensions() {
-                                    if term_width != term_canvas.width() as usize || term_height != term_canvas.height() as usize {
+                                    if term_width != term_canvas.width() as usize || (term_height * 2) != term_canvas.height() as usize {
                                         match background_color {
                                             Color::Transparent => {
                                                 *term_canvas = RgbaImage::new(term_width as u32, term_height as u32 * 2);
@@ -1137,6 +1173,8 @@ fn main() -> ImageResult<()> {
                                                 *term_canvas = RgbaImage::from_pixel(term_width as u32, term_height as u32 * 2, rgb.to_rgba());
                                             }
                                         }
+                                        prev_frame = RgbaImage::new(term_canvas.width(), term_canvas.height());
+                                        print!("\x1B[2J");
                                     } else {
                                         fill_color(term_canvas, background_color);
                                     }
@@ -1149,9 +1187,11 @@ fn main() -> ImageResult<()> {
 
                             style.paint(&frame_canvas, term_canvas, filter);
 
-                            image_to_ansi_into(term_canvas, alpha_threshold, &mut lines);
+                            image_to_ansi_into(&prev_frame, term_canvas, alpha_threshold, &mut lines);
+                            std::mem::swap(&mut prev_frame, term_canvas);
                         } else {
-                            image_to_ansi_into(&frame_canvas, alpha_threshold, &mut lines);
+                            image_to_ansi_into(&prev_frame, &frame_canvas, alpha_threshold, &mut lines);
+                            std::mem::swap(&mut prev_frame, &mut frame_canvas);
                         }
                         write_frame_to_buf(&lines, &mut linebuf, endl);
 
@@ -1185,9 +1225,9 @@ fn main() -> ImageResult<()> {
         DecodedImage::Still(image) => {
             if let Some(term_canvas) = &mut term_canvas {
                 style.paint(&image, term_canvas, filter);
-                image_to_ansi_into(&term_canvas, alpha_threshold, &mut lines);
+                image_to_ansi_into(&prev_frame, &term_canvas, alpha_threshold, &mut lines);
             } else {
-                image_to_ansi_into(&image, alpha_threshold, &mut lines);
+                image_to_ansi_into(&prev_frame, &image, alpha_threshold, &mut lines);
             }
             write_frame_to_buf(&lines, &mut linebuf, endl);
 
