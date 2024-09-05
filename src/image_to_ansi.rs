@@ -3,40 +3,74 @@ use std::fmt::Write;
 use image::{Rgba, RgbaImage};
 
 #[inline]
-pub fn image_to_ansi(prev_frame: &RgbaImage, image: &RgbaImage, alpha_threshold: u8, endl: &str) -> String {
+pub fn image_to_ansi(prev_frame: &RgbaImage, image: &RgbaImage, alpha_threshold: u8) -> String {
     let mut lines = String::new();
-    image_to_ansi_into(prev_frame, image, alpha_threshold, endl, &mut lines);
+    image_to_ansi_into(prev_frame, image, alpha_threshold, &mut lines);
     lines
 }
 
-pub fn image_to_ansi_into(prev_frame: &RgbaImage, image: &RgbaImage, alpha_threshold: u8, endl: &str, lines: &mut String) {
-    let line_len = (image.width() as usize) * "\x1B[38;2;255;255;255\x1B[48;2;255;255;255m▄".len() + endl.len();
+#[inline]
+fn move_cursor(curr_x: u32, curr_line_y: u32, x: u32, line_y: u32, lines: &mut String) {
+    if x != curr_x {
+        if x > curr_x {
+            let dx = x - curr_x;
+            if dx == 1 {
+                lines.push_str("\x1B[C");
+            } else {
+                let _ = write!(lines, "\x1B[{dx}C");
+            }
+        } else {
+            let dx = curr_x - x;
+            if dx == 1 {
+                lines.push_str("\x1B[D");
+            } else {
+                let _ = write!(lines, "\x1B[{dx}D");
+            }
+        }
+    }
+
+    if line_y != curr_line_y {
+        if line_y > curr_line_y {
+            let dy = line_y - curr_line_y;
+            if dy == 1 {
+                lines.push_str("\x1B[B");
+            } else {
+                let _ = write!(lines, "\x1B[{dy}B");
+            }
+        } else {
+            let dy = curr_line_y - line_y;
+            if dy == 1 {
+                lines.push_str("\x1B[A");
+            } else {
+                let _ = write!(lines, "\x1B[{dy}A");
+            }
+        }
+    }
+}
+
+pub fn image_to_ansi_into(prev_frame: &RgbaImage, image: &RgbaImage, alpha_threshold: u8, lines: &mut String) {
+    let line_len = (image.width() as usize) * "\x1B[38;2;255;255;255\x1B[48;2;255;255;255m▄".len() + "\x1B[0m".len();
     let row_count = (image.height() + 1) / 2;
 
     lines.clear();
+
+    if row_count == 0 {
+        return;
+    }
+
     lines.reserve(line_len * row_count as usize + "\x1B[0m".len());
 
+    let mut curr_line_y = 0;
+    let mut curr_x = 0;
+
     for line_y in 0..row_count {
-        if line_y > 0 {
-            lines.push_str(endl);
-        }
         let y = line_y * 2;
         if y + 1 == image.height() {
             let mut prev_color = Rgba([0, 0, 0, 0]);
-            let mut x_skip = 0;
             for x in 0..image.width() {
                 let color = *image.get_pixel(x, y);
-                if color == *prev_frame.get_pixel(x, y) {
-                    x_skip += 1;
-                } else {
-                    if x_skip > 0 {
-                        if x_skip == 1 {
-                            lines.push_str("\x1B[C");
-                        } else {
-                            let _ = write!(lines, "\x1B[{x_skip}C");
-                        }
-                        x_skip = 0;
-                    }
+                if color != *prev_frame.get_pixel(x, y) {
+                    move_cursor(curr_x, curr_line_y, x, line_y, lines);
                     let Rgba([r, g, b, a]) = color;
                     if a < alpha_threshold {
                         if prev_color[3] < alpha_threshold {
@@ -50,27 +84,19 @@ pub fn image_to_ansi_into(prev_frame: &RgbaImage, image: &RgbaImage, alpha_thres
                         let _ = write!(lines, "\x1B[38;2;{r};{g};{b}m▀");
                     }
                     prev_color = color;
+                    curr_x = x + 1;
+                    curr_line_y = line_y;
                 }
             }
         } else {
             let mut prev_bg = Rgba([0, 0, 0, 0]);
             let mut prev_fg = Rgba([0, 0, 0, 0]);
-            let mut x_skip = 0;
             for x in 0..image.width() {
                 let color_top    = *image.get_pixel(x, y);
                 let color_bottom = *image.get_pixel(x, y + 1);
 
-                if color_top == *prev_frame.get_pixel(x, y) && color_bottom == *prev_frame.get_pixel(x, y + 1) {
-                    x_skip += 1;
-                } else {
-                    if x_skip > 0 {
-                        if x_skip == 1 {
-                            lines.push_str("\x1B[C");
-                        } else {
-                            let _ = write!(lines, "\x1B[{x_skip}C");
-                        }
-                        x_skip = 0;
-                    }
+                if color_top != *prev_frame.get_pixel(x, y) || color_bottom != *prev_frame.get_pixel(x, y + 1) {
+                    move_cursor(curr_x, curr_line_y, x, line_y, lines);
                     let Rgba([r1, g1, b1, a1]) = color_top;
 
                     if color_top == color_bottom {
@@ -127,10 +153,34 @@ pub fn image_to_ansi_into(prev_frame: &RgbaImage, image: &RgbaImage, alpha_thres
                             }
                         }
                     }
+                    curr_x = x + 1;
+                    curr_line_y = line_y;
                 }
             }
         }
 
-        lines.push_str("\x1B[0m");
+        if curr_line_y == line_y {
+            lines.push_str("\x1B[0m");
+        }
+    }
+
+    // Just to ensure that the cursor is at the correct position after
+    // the image is rendered or when hitting Ctrl+C during sleep.
+    let dx = image.width() - curr_x;
+    if dx > 0 {
+        if dx == 1 {
+            lines.push_str("\x1B[C");
+        } else {
+            let _ = write!(lines, "\x1B[{dx}C");
+        }
+    }
+
+    let dy = row_count - 1 - curr_line_y;
+    if dy > 0 {
+        if dy == 1 {
+            lines.push_str("\x1B[B");
+        } else {
+            let _ = write!(lines, "\x1B[{dy}B");
+        }
     }
 }

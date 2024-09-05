@@ -245,10 +245,10 @@ fn main() -> ImageResult<()> {
 
                             style.paint(&frame_canvas, term_canvas, filter);
 
-                            image_to_ansi_into(&prev_frame, term_canvas, alpha_threshold, endl, &mut linebuf);
+                            image_to_ansi_into(&prev_frame, term_canvas, alpha_threshold, &mut linebuf);
                             std::mem::swap(&mut prev_frame, term_canvas);
                         } else {
-                            image_to_ansi_into(&prev_frame, &frame_canvas, alpha_threshold, endl, &mut linebuf);
+                            image_to_ansi_into(&prev_frame, &frame_canvas, alpha_threshold, &mut linebuf);
                             std::mem::swap(&mut prev_frame, &mut frame_canvas);
                         }
 
@@ -282,9 +282,9 @@ fn main() -> ImageResult<()> {
         DecodedImage::Still(image) => {
             if let Some(term_canvas) = &mut term_canvas {
                 style.paint(&image, term_canvas, filter);
-                image_to_ansi_into(&prev_frame, &term_canvas, alpha_threshold, endl, &mut linebuf);
+                image_to_ansi_into(&prev_frame, &term_canvas, alpha_threshold, &mut linebuf);
             } else {
-                image_to_ansi_into(&prev_frame, &image, alpha_threshold, endl, &mut linebuf);
+                image_to_ansi_into(&prev_frame, &image, alpha_threshold, &mut linebuf);
             }
 
             print!("\x1B[1;1H{linebuf}");
