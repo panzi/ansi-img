@@ -8,8 +8,12 @@ This uses the [Unicode block elements](https://en.wikipedia.org/wiki/Block_Eleme
 `█`, `▄`, and `▀` plus
 [24-bit color ANSI escape sequences](https://en.wikipedia.org/wiki/ANSI_escape_code#24-bit)
 to set foreground and background colors in order to render two pixels for each
-character. Not every terminal supports these escape sequences, and some that do
-downsample the color quite heavily. Also some terminals don't render the
+character. It also uses ANSI escape sequences to move the cursor around, so that
+it doesn't have to re-paint the whole screen in an animation when only parts
+change.
+
+Not every terminal supports the 24-bit color escape sequences, and some that do
+downsample the colors quite heavily. Also some terminals don't render the
 characters perfectly and sometimes leave small gaps.
 
 It supports displaying animated GIFs! (Press Ctrl+C to quit the animation.)
