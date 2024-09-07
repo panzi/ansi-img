@@ -1,3 +1,4 @@
+use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -185,6 +186,22 @@ fn main() -> ImageResult<()> {
         RgbaImage::new(width, height)
     };
 
+    #[cfg(target_family = "unix")]
+    let mut term = MaybeUninit::<libc::termios>::zeroed();
+
+    #[cfg(target_family = "unix")]
+    let mut term = if unsafe { libc::tcgetattr(libc::STDIN_FILENO, term.as_mut_ptr()) == 0 } {
+        Some(unsafe { term.assume_init_mut() })
+    } else {
+        None
+    };
+
+    #[cfg(target_family = "unix")]
+    if let Some(term) = &mut term {
+        (*term).c_lflag &= !libc::ECHO;
+        unsafe { libc::tcsetattr(libc::STDIN_FILENO, 0, *term); }
+    }
+
     print!("\x1B[2J");
 
     match anim {
@@ -293,6 +310,12 @@ fn main() -> ImageResult<()> {
     }
 
     print!("\x1B[0m\x1B[?25h\x1B[?7h{endl}");
+
+    #[cfg(target_family = "unix")]
+    if let Some(term) = term {
+        term.c_lflag |= libc::ECHO;
+        unsafe { libc::tcsetattr(libc::STDIN_FILENO, 0, term); }
+    }
 
     Ok(())
 }
