@@ -206,6 +206,9 @@ fn main() -> ImageResult<()> {
     }
 
     if inline {
+        // Make sure everything is in view because when moving the cursor beyond
+        // the bottom screen edge it will stay at the last line and not scroll
+        // the screen.
         let lines = (prev_frame.height() + 1) / 2;
         for _ in 0..lines {
             println!();

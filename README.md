@@ -103,6 +103,19 @@ Options:
           
           [default: transparent]
 
+  -l, --line-end <LINE_END>
+          Line ending to use.
+          
+          Values:
+           - Cr
+           - Lf
+           - CrLf
+          
+          [default: Lf]
+
+  -i, --inline
+          Don't clear screen and render image wherever the cursor currently is
+
   -h, --help
           Print help (see a summary with '-h')
 
