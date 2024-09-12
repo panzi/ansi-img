@@ -79,6 +79,8 @@ fn main() -> ImageResult<()> {
     let reader = ImageReader::open(path)?.with_guessed_format()?;
 
     let mut lock = std::io::stdout().lock();
+    // CSI ?  7 l     No Auto-Wrap Mode (DECAWM), VT100.
+    // CSI ? 25 l     Hide cursor (DECTCEM), VT220
     print!("\x1B[?25l\x1B[?7l");
 
     let mut linebuf = String::new();
@@ -309,6 +311,9 @@ fn main() -> ImageResult<()> {
         }
     }
 
+    // CSI 0 m        Reset or normal, all attributes become turned off
+    // CSI ?  7 h     Auto-Wrap Mode (DECAWM), VT100
+    // CSI ? 25 h     Show cursor (DECTCEM), VT220
     print!("\x1B[0m\x1B[?25h\x1B[?7h{endl}");
 
     #[cfg(target_family = "unix")]

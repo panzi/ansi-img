@@ -49,7 +49,8 @@ fn move_cursor(curr_x: u32, curr_line_y: u32, x: u32, line_y: u32, lines: &mut S
 }
 
 pub fn image_to_ansi_into(prev_frame: &RgbaImage, image: &RgbaImage, alpha_threshold: u8, lines: &mut String) {
-    let line_len = (image.width() as usize) * "\x1B[38;2;255;255;255\x1B[48;2;255;255;255m▄".len() + "\x1B[0m".len();
+    let width = image.width();
+    let line_len = (width as usize) * "\x1B[38;2;255;255;255\x1B[48;2;255;255;255m▄".len() + "\x1B[0m".len();
     let row_count = (image.height() + 1) / 2;
 
     lines.clear();
@@ -84,7 +85,13 @@ pub fn image_to_ansi_into(prev_frame: &RgbaImage, image: &RgbaImage, alpha_thres
                         let _ = write!(lines, "\x1B[38;2;{r};{g};{b}m▀");
                     }
                     prev_color = color;
-                    curr_x = x + 1;
+                    // NOTE: Cursor location doesn't update at the end of the screen.
+                    // This assumes that the image is rendered up to the end of the screen!
+                    if (x + 1) == width {
+                        curr_x = x;
+                    } else {
+                        curr_x = x + 1;
+                    }
                     curr_line_y = line_y;
                 }
             }
@@ -153,7 +160,13 @@ pub fn image_to_ansi_into(prev_frame: &RgbaImage, image: &RgbaImage, alpha_thres
                             }
                         }
                     }
-                    curr_x = x + 1;
+                    // NOTE: Cursor location doesn't update at the end of the screen.
+                    // This assumes that the image is rendered up to the end of the screen!
+                    if (x + 1) == width {
+                        curr_x = x;
+                    } else {
+                        curr_x = x + 1;
+                    }
                     curr_line_y = line_y;
                 }
             }
