@@ -162,9 +162,10 @@ fn main() -> ImageResult<()> {
                     let x = x.unwrap_or(0);
                     let y = y.unwrap_or(0);
 
-                    // TODO: fix integer overflow handling
-                    let w = (w as i64 + x as i64).max(0) as u32;
-                    let h = (h as i64 + y as i64).max(0) as u32;
+                    let w = (w as i64 + x as i64).max(0);
+                    let h = (h as i64 + y as i64).max(0);
+                    let w = if w > u32::MAX as i64 { u32::MAX } else { w as u32 };
+                    let h = if h > u32::MAX as i64 { u32::MAX } else { h as u32 };
 
                     if let Color::Solid(rgb) = background_color {
                         Some(RgbaImage::from_pixel(w, h, rgb.to_rgba()))
