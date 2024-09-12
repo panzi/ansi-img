@@ -30,6 +30,9 @@ impl Size {
                             height = image_height * z as u32;
                         }
                     }
+                } else if z == 1 {
+                    width  = image_width;
+                    height = image_height;
                 } else {
                     width  = image_width  / (-z as u32);
                     height = image_height / (-z as u32);
