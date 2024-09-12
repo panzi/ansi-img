@@ -68,6 +68,7 @@ fn main() -> ImageResult<()> {
     let filter = args.filter.into();
     let background_color = args.background_color;
     let endl = args.line_end.as_str();
+    let inline = args.inline;
 
     {
         let run_anim = run_anim.clone();
@@ -146,7 +147,7 @@ fn main() -> ImageResult<()> {
     };
 
     let mut term_canvas = match canvas_size {
-        CanvasSize::Exact(width, height) => Some(RgbaImage::new(width, height * 2)),
+        CanvasSize::Exact(width, height) => Some(RgbaImage::new(width, height)),
         CanvasSize::Window =>
             term_size::dimensions().map(|(width, height)|
                 match background_color {
@@ -204,7 +205,15 @@ fn main() -> ImageResult<()> {
         unsafe { libc::tcsetattr(libc::STDIN_FILENO, 0, *term); }
     }
 
-    print!("\x1B[2J");
+    if inline {
+        let lines = (prev_frame.height() + 1) / 2;
+        for _ in 0..lines {
+            println!();
+        }
+        print!("\x1B[{lines}A\x1B[s");
+    } else {
+        print!("\x1B[2J");
+    }
 
     match anim {
         DecodedImage::Animated(width, height, frames) => {
@@ -238,9 +247,13 @@ fn main() -> ImageResult<()> {
                             frame_canvas.copy_from(frame_image, frame.left(), frame.top())?;
                         }
 
+                        let term_size = term_size::dimensions();
+
                         if let Some(term_canvas) = &mut term_canvas {
+                            let full_width;
                             if canvas_size.is_window() {
-                                if let Some((term_width, term_height)) = term_size::dimensions() {
+                                full_width = true;
+                                if let Some((term_width, term_height)) = term_size {
                                     if term_width != term_canvas.width() as usize || (term_height * 2) != term_canvas.height() as usize {
                                         match background_color {
                                             Color::Transparent => {
@@ -259,19 +272,33 @@ fn main() -> ImageResult<()> {
                                     fill_color(term_canvas, background_color);
                                 }
                             } else {
+                                full_width = if let Some((term_width, _)) = term_size {
+                                    term_canvas.width() as usize >= term_width
+                                } else {
+                                    true
+                                };
                                 fill_color(term_canvas, background_color);
                             }
 
                             style.paint(&frame_canvas, term_canvas, filter);
 
-                            image_to_ansi_into(&prev_frame, term_canvas, alpha_threshold, &mut linebuf);
+                            image_to_ansi_into(&prev_frame, term_canvas, alpha_threshold, full_width, &mut linebuf);
                             std::mem::swap(&mut prev_frame, term_canvas);
                         } else {
-                            image_to_ansi_into(&prev_frame, &frame_canvas, alpha_threshold, &mut linebuf);
+                            let full_width = if let Some((term_width, _)) = term_size {
+                                frame_canvas.width() as usize >= term_width
+                            } else {
+                                true
+                            };
+                            image_to_ansi_into(&prev_frame, &frame_canvas, alpha_threshold, full_width, &mut linebuf);
                             std::mem::swap(&mut prev_frame, &mut frame_canvas);
                         }
 
-                        print!("\x1B[1;1H{linebuf}");
+                        if inline {
+                            print!("\x1B[u{linebuf}");
+                        } else {
+                            print!("\x1B[1;1H{linebuf}");
+                        }
                         let _ = lock.flush();
 
                         let now = Instant::now();
@@ -301,12 +328,16 @@ fn main() -> ImageResult<()> {
         DecodedImage::Still(image) => {
             if let Some(term_canvas) = &mut term_canvas {
                 style.paint(&image, term_canvas, filter);
-                image_to_ansi_into(&prev_frame, &term_canvas, alpha_threshold, &mut linebuf);
+                image_to_ansi_into(&prev_frame, &term_canvas, alpha_threshold, false, &mut linebuf);
             } else {
-                image_to_ansi_into(&prev_frame, &image, alpha_threshold, &mut linebuf);
+                image_to_ansi_into(&prev_frame, &image, alpha_threshold, false, &mut linebuf);
             }
 
-            print!("\x1B[1;1H{linebuf}");
+            if inline {
+                print!("{linebuf}");
+            } else {
+                print!("\x1B[1;1H{linebuf}");
+            }
             let _ = lock.flush();
         }
     }

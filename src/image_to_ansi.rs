@@ -3,9 +3,9 @@ use std::fmt::Write;
 use image::{Rgba, RgbaImage};
 
 #[inline]
-pub fn image_to_ansi(prev_frame: &RgbaImage, image: &RgbaImage, alpha_threshold: u8) -> String {
+pub fn image_to_ansi(prev_frame: &RgbaImage, image: &RgbaImage, alpha_threshold: u8, full_width: bool) -> String {
     let mut lines = String::new();
-    image_to_ansi_into(prev_frame, image, alpha_threshold, &mut lines);
+    image_to_ansi_into(prev_frame, image, alpha_threshold, full_width, &mut lines);
     lines
 }
 
@@ -48,7 +48,7 @@ fn move_cursor(curr_x: u32, curr_line_y: u32, x: u32, line_y: u32, lines: &mut S
     }
 }
 
-pub fn image_to_ansi_into(prev_frame: &RgbaImage, image: &RgbaImage, alpha_threshold: u8, lines: &mut String) {
+pub fn image_to_ansi_into(prev_frame: &RgbaImage, image: &RgbaImage, alpha_threshold: u8, full_width: bool, lines: &mut String) {
     let width = image.width();
     let line_len = (width as usize) * "\x1B[38;2;255;255;255\x1B[48;2;255;255;255m▄".len() + "\x1B[0m".len();
     let row_count = (image.height() + 1) / 2;
@@ -87,7 +87,7 @@ pub fn image_to_ansi_into(prev_frame: &RgbaImage, image: &RgbaImage, alpha_thres
                     prev_color = color;
                     // NOTE: Cursor location doesn't update at the end of the screen.
                     // This assumes that the image is rendered up to the end of the screen!
-                    if (x + 1) == width {
+                    if full_width && (x + 1) == width {
                         curr_x = x;
                     } else {
                         curr_x = x + 1;
@@ -162,7 +162,7 @@ pub fn image_to_ansi_into(prev_frame: &RgbaImage, image: &RgbaImage, alpha_thres
                     }
                     // NOTE: Cursor location doesn't update at the end of the screen.
                     // This assumes that the image is rendered up to the end of the screen!
-                    if (x + 1) == width {
+                    if full_width && (x + 1) == width {
                         curr_x = x;
                     } else {
                         curr_x = x + 1;

@@ -73,6 +73,10 @@ pub struct Args {
     #[arg(short, long, default_value_t = LineEnd::Lf)]
     pub line_end: LineEnd,
 
+    /// Don't clear screen and render image wherever the cursor currently is.
+    #[arg(short, long, default_value_t = false)]
+    pub inline: bool,
+
     #[arg()]
     pub path: OsString,
 }
