@@ -209,11 +209,15 @@ fn main() -> ImageResult<()> {
         // Make sure everything is in view because when moving the cursor beyond
         // the bottom screen edge it will stay at the last line and not scroll
         // the screen.
-        let lines = (prev_frame.height() + 1) / 2;
-        for _ in 0..lines {
-            println!();
+        if args.no_padding {
+            print!("\x1B[s");
+        } else {
+            let lines = (prev_frame.height() + 1) / 2;
+            for _ in 0..lines {
+                println!();
+            }
+            print!("\x1B[{lines}A\x1B[s");
         }
-        print!("\x1B[{lines}A\x1B[s");
     } else {
         print!("\x1B[2J");
     }

@@ -77,6 +77,11 @@ pub struct Args {
     #[arg(short, long, default_value_t = false)]
     pub inline: bool,
 
+    /// When using `--inline` don't print newlines to scroll the screen to
+    /// ensure the image is on screen.
+    #[arg(short, long, default_value_t = false)]
+    pub no_padding: bool,
+
     #[arg()]
     pub path: OsString,
 }
