@@ -23,11 +23,9 @@ pub mod cli;
 fn interruptable_sleep(duration: Duration) -> bool {
     #[cfg(target_family = "unix")]
     {
-        let nanos = duration.as_nanos();
-        let sec = nanos / 1_000_000_000u128;
         let req = libc::timespec {
-            tv_sec:  sec as i64,
-            tv_nsec: (nanos - (sec * 1_000_000_000u128)) as i64,
+            tv_sec:  duration.as_secs() as libc::time_t,
+            tv_nsec: duration.subsec_nanos() as i64,
         };
         let ret = unsafe { libc::nanosleep(&req, std::ptr::null_mut()) };
         return ret == 0;
